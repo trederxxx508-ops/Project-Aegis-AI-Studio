@@ -42,8 +42,14 @@ services/
   rag_engine.py               # LlamaIndex + Qdrant + OpenAI (lazy init)
   scoring_engine.py           # Master Scoring Engine + klasifikasi sinyal
 dashboard/streamlit_app.py    # Dashboard Streamlit (Phase 4)
+web/aegis_copilot.html        # Aplikasi web mandiri (semua engine berjalan di browser)
 tests/                        # Pytest suite (offline, sumber eksternal di-mock)
 ```
+
+> **Versi web instan**: `web/aegis_copilot.html` adalah aplikasi satu-file yang bisa dibuka
+> langsung di browser tanpa server — seluruh engine (teknikal, risiko, sentimen, skoring)
+> diporting 1:1 ke JavaScript. Input data via CSV (format Yahoo Finance) atau data demo.
+> Data live & RAG PDF tetap membutuhkan backend FastAPI di bawah.
 
 ## 🚀 Quick Start
 

@@ -1,0 +1,10 @@
+[project]
+name = "project-aegis-ai-studio"
+version = "1.0.0"
+description = "Stock AI Copilot & Decision Support System — RAG fundamental, technical, sentiment, risk & master scoring"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

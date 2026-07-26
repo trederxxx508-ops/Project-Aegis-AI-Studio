@@ -19,7 +19,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from services import backtest, cache, gold, macro_engine, market_data, regime, scanner
+from services import (
+    alerts, backtest, cache, gold, history, macro_engine, market_data, regime, scanner,
+)
 from services.analysis import analyze_ticker
 from services.rag_engine import rag_engine
 
@@ -350,6 +352,51 @@ async def run_backtest_endpoint(request: BacktestRequest) -> dict:
     if not request.include_trades:
         result["trades"] = []
     return result
+
+
+@app.get("/history/{asset}", summary="Riwayat Skor — Arah Pergerakan, Bukan Cuma Angka Hari Ini")
+async def get_asset_history(asset: str, days: int = 90) -> dict:
+    return {
+        "asset": asset.upper(),
+        "trend": history.summarize_trend(asset, days=days),
+        "snapshots": history.get_history(asset, days=days),
+    }
+
+
+@app.get("/history", summary="Daftar Aset yang Punya Riwayat")
+async def list_history() -> dict:
+    return history.stats()
+
+
+@app.post("/snapshot/{asset}", summary="Rekam Kondisi Sekarang + Deteksi Perubahan")
+async def take_snapshot(asset: str) -> dict:
+    """Analisis, simpan ke riwayat, lalu laporkan perubahan sejak rekaman terakhir."""
+    name = asset.upper()
+    try:
+        if name == "GOLD":
+            analysis = gold.analyze_gold()
+        else:
+            analysis = analyze_ticker(name)
+    except market_data.RateLimitedError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal menganalisis {name}: {exc}")
+
+    previous = history.get_latest(name)
+    history.record_snapshot(name, analysis)
+    current = history.get_latest(name)
+    found = alerts.evaluate(previous, current)
+
+    return {
+        "asset": name,
+        "signal": analysis.get("signal"),
+        "total_score": analysis.get("total_score"),
+        "alerts": found,
+        "is_first_snapshot": previous is None,
+        "trend": history.summarize_trend(name),
+    }
 
 
 @app.post("/cache/clear", summary="Kosongkan Cache Data Pasar")

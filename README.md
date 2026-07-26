@@ -107,6 +107,10 @@ OPENAI_API_KEY=sk-... docker compose up --build
 | `GET` | `/macro` | Kondisi makro ekonomi + asal-usul & kesegaran tiap indikator |
 | `POST` | `/analyze-gold` | **Analisis emas**: makro + teknikal + sentimen + ukuran posisi (USD/oz) |
 | `POST` | `/backtest` | **Uji mundur**: apakah sinyalnya terbukti? + kalibrasi win rate |
+| `GET` | `/regime` | Apakah hubungan makro-emas sedang berlaku? |
+| `POST` | `/snapshot/{asset}` | Rekam kondisi sekarang + laporkan perubahan sejak rekaman terakhir |
+| `GET` | `/history/{asset}` | Riwayat skor + arah pergerakannya |
+| `GET` | `/history` | Daftar aset yang punya riwayat |
 | `POST` | `/cache/clear` | Kosongkan cache data pasar (paksa ambil data terbaru) |
 
 ### Contoh `/scan` — pemindai otomatis
@@ -422,6 +426,46 @@ sampel sekecil itu tidak layak jadi dasar ukuran posisi.
 > Temuan nyata: win rate sesungguhnya **43–48%**, bukan 55% yang biasa diisi. Artinya
 > ukuran posisi yang selama ini dihitung **terlalu besar**. Dashboard memberi peringatan
 > otomatis bila angka yang Anda pakai menyimpang dari hasil uji.
+
+## 📜 Riwayat Skor & Pemberitahuan Otomatis
+
+Tanpa riwayat, setiap analisis berdiri sendiri: Anda tahu skor emas hari ini 28, tetapi
+tidak tahu apakah itu **turun dari 60** minggu lalu atau **naik dari 15**. Arah pergerakan
+sering lebih berguna daripada angkanya hari ini.
+
+Riwayat disimpan di **SQLite** — satu berkas, tanpa server, ikut berpindah bersama folder
+proyek. Dipilih agar pengguna yang menjalankan lewat satu klik tidak perlu memasang basis
+data apa pun.
+
+### Pemberitahuan hanya saat ada yang benar-benar berubah
+
+Pemberitahuan yang terlalu sering membuat orang berhenti membacanya; yang terlambat tidak
+berguna. Aturan yang memicu peringatan:
+
+| Kejadian | Tingkat | Contoh |
+|---|---|---|
+| Sinyal berpindah | 🚨 Tinggi | `sinyal berubah SELL → BUY` |
+| Hubungan makro putus | 🚨 Tinggi | `hubungan makro normal → putus` |
+| Skor melewati ambang keputusan | ⚠️ Sedang | `skor naik melewati 55 (zona beli)` |
+| Skor bergerak tajam (≥10 poin) | ⚠️ Sedang | `skor bergerak +12,4 poin` |
+| Kelengkapan data menurun | ℹ️ Rendah | `kelengkapan data makro turun 100% → 75%` |
+
+Setiap peringatan membawa **nilai sebelum dan sesudah**, sehingga bisa diperiksa — bukan
+sekadar klaim "ada perubahan". Rekaman pertama sengaja **tidak** memicu pemberitahuan:
+merekam untuk pertama kali bukan sebuah perubahan.
+
+### Agar tidak perlu membuka aplikasi
+
+```bash
+python scripts/watch.py                    # emas, tiap 60 menit
+python scripts/watch.py --interval 30 --stocks BBCA.JK TLKM.JK
+python scripts/watch.py --once             # sekali jalan
+```
+
+Pemantau merekam berkala dan **hanya berbicara ketika ada perubahan**. Untuk menerimanya
+di ponsel, isi `TELEGRAM_BOT_TOKEN` dan `TELEGRAM_CHAT_ID` di `.env` (buat bot lewat
+@BotFather). Tanpa kredensial itu, pengiriman **dilaporkan dilewati** — bukan
+berpura-pura berhasil.
 
 ## 🧮 Formula Risk Engine (Section 5 Blueprint)
 

@@ -19,6 +19,8 @@ htmlcov/
 !.env.example
 
 # Runtime artifacts
+aegis_history.db
+*.db
 temp_uploads/
 qdrant_storage/
 *.log

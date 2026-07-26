@@ -102,9 +102,9 @@ risk_params = {
     "reward_risk_ratio": reward_risk,
 }
 
-tab_scan, tab_single, tab_gold, tab_test, tab_upload, tab_qa = st.tabs(
+tab_scan, tab_single, tab_gold, tab_test, tab_hist, tab_upload, tab_qa = st.tabs(
     ["🔎 Pemindai Otomatis", "📈 Analisis 1 Saham", "🥇 Emas & Makro",
-     "🧪 Uji Mundur", "📄 Upload Laporan", "💬 Tanya Laporan"]
+     "🧪 Uji Mundur", "📜 Riwayat & Peringatan", "📄 Upload Laporan", "💬 Tanya Laporan"]
 )
 
 
@@ -662,7 +662,116 @@ with tab_test:
 
 
 # ---------------------------------------------------------------------------
-# TAB 5 — Upload laporan keuangan
+# TAB 5 — Riwayat skor & peringatan
+# ---------------------------------------------------------------------------
+with tab_hist:
+    st.subheader("Arah pergerakan skor — sering lebih berguna daripada angka hari ini")
+    st.caption(
+        "Tiap kali Anda merekam, hasilnya tersimpan. Sistem lalu membandingkan "
+        "dengan rekaman sebelumnya dan hanya melaporkan perubahan yang berarti."
+    )
+
+    tersimpan = {}
+    if api_ok:
+        try:
+            tersimpan = requests.get(f"{api_url}/history", timeout=10).json()
+        except Exception:
+            tersimpan = {}
+
+    hcol1, hcol2 = st.columns([2, 1])
+    aset_tercatat = [a["asset"] for a in tersimpan.get("assets", [])]
+    with hcol1:
+        pilihan = st.text_input(
+            "Aset", value=aset_tercatat[0] if aset_tercatat else "GOLD",
+            help="GOLD untuk emas, atau ticker saham seperti BBCA.JK",
+        )
+    with hcol2:
+        st.write("")
+        st.write("")
+        rekam = st.button("📸 Rekam Sekarang", type="primary",
+                          use_container_width=True, disabled=not api_ok)
+
+    if aset_tercatat:
+        st.caption("Sudah terekam: " + " · ".join(
+            f"{a['asset']} ({a['snapshots']}×)" for a in tersimpan["assets"]
+        ))
+
+    if rekam and pilihan.strip():
+        with st.spinner(f"Menganalisis dan merekam {pilihan}…"):
+            try:
+                resp = requests.post(f"{api_url}/snapshot/{pilihan.strip()}", timeout=300)
+                if resp.ok:
+                    hasil = resp.json()
+                    if hasil.get("is_first_snapshot"):
+                        st.info(
+                            f"✅ Rekaman pertama {hasil['asset']} tersimpan "
+                            f"({hasil['signal']}, skor {hasil['total_score']}). "
+                            "Rekam lagi nanti untuk melihat perubahannya."
+                        )
+                    elif hasil.get("alerts"):
+                        st.warning(f"🔔 {len(hasil['alerts'])} perubahan terdeteksi:")
+                        for a in hasil["alerts"]:
+                            ikon = {"tinggi": "🚨", "sedang": "⚠️", "rendah": "ℹ️"}.get(a["severity"], "•")
+                            st.markdown(f"{ikon} **{a['title']}**  \n{a['detail']}")
+                    else:
+                        st.success(
+                            f"✅ Terekam — {hasil['signal']} (skor {hasil['total_score']}). "
+                            "Tidak ada perubahan berarti sejak rekaman terakhir."
+                        )
+                else:
+                    st.error(_detail(resp))
+            except Exception as exc:
+                st.error(f"Gagal: {exc}")
+
+    # --- Grafik riwayat ---
+    if api_ok and pilihan.strip():
+        try:
+            data = requests.get(f"{api_url}/history/{pilihan.strip()}",
+                                params={"days": 90}, timeout=30).json()
+        except Exception:
+            data = {}
+
+        trend = data.get("trend") or {}
+        snaps = data.get("snapshots") or []
+
+        if not snaps:
+            st.info(
+                "Belum ada riwayat untuk aset ini. Tekan **Rekam Sekarang** untuk memulai, "
+                "atau jalankan pemantau otomatis:\n\n`python scripts/watch.py`"
+            )
+        else:
+            t1, t2, t3, t4 = st.columns(4)
+            t1.metric("Rekaman", trend.get("snapshots", len(snaps)))
+            t2.metric("Skor sekarang", trend.get("current_score"))
+            arah = trend.get("trend")
+            t3.metric("Arah", {"naik": "📈 Naik", "turun": "📉 Turun",
+                               "datar": "➡️ Datar"}.get(arah, "—"),
+                      delta=trend.get("change"))
+            t4.metric("Rentang", f"{trend.get('min_score')} – {trend.get('max_score')}")
+
+            df_h = pd.DataFrame(snaps).sort_values("recorded_at")
+            df_h["waktu"] = pd.to_datetime(df_h["recorded_at"])
+            st.line_chart(df_h.set_index("waktu")[["total_score"]], height=220)
+
+            with st.expander("📋 Tabel rekaman"):
+                kolom = ["recorded_at", "signal", "total_score", "macro",
+                         "technical", "sentiment", "price", "regime_status"]
+                ada = [k for k in kolom if k in df_h.columns]
+                st.dataframe(df_h[ada].sort_values("recorded_at", ascending=False),
+                             hide_index=True, use_container_width=True)
+
+    st.divider()
+    st.markdown(
+        "**Agar tidak perlu membuka aplikasi:** jalankan pemantau di jendela terpisah — "
+        "ia merekam berkala dan hanya berbicara saat ada perubahan.\n\n"
+        "```\npython scripts/watch.py --interval 60 --stocks BBCA.JK\n```\n"
+        "Isi `TELEGRAM_BOT_TOKEN` dan `TELEGRAM_CHAT_ID` di `.env` bila ingin "
+        "pemberitahuannya masuk ke ponsel."
+    )
+
+
+# ---------------------------------------------------------------------------
+# TAB 6 — Upload laporan keuangan
 # ---------------------------------------------------------------------------
 with tab_upload:
     st.subheader("Upload laporan keuangan (PDF)")

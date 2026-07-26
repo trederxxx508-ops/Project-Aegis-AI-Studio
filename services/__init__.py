@@ -18,4 +18,6 @@ Modul emas & makro:
 - market_hours      : status buka/tutup pasar + kesegaran harga
 - regime            : deteksi saat hubungan makro-emas berhenti berlaku
 - backtest          : uji mundur bebas lookahead + kalibrasi win rate terukur
+- history           : riwayat skor tersimpan (SQLite) + ringkasan arah
+- alerts            : deteksi perubahan penting + pengiriman pemberitahuan
 """

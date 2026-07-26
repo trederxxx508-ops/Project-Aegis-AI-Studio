@@ -88,14 +88,31 @@ def fetch_gold_prices(period: str = "1y", use_cache: bool = True) -> tuple[pd.Da
     )
 
 
-def _last_bar_time(df: pd.DataFrame) -> Optional[datetime]:
+def _last_price_time(df: pd.DataFrame) -> tuple[Optional[datetime], str]:
+    """Waktu harga terakhir, seakurat mungkin.
+
+    Indeks bar harian menandai **awal sesi**, bukan transaksi terakhir. Saat
+    pasar sedang berjalan, memakai indeks bar akan melaporkan harga "berumur
+    8 jam" padahal harganya baru saja bergerak. Bila penyedia data menyertakan
+    ``regularMarketTime`` (waktu transaksi terakhir), angka itulah yang dipakai.
+    """
+    meta = df.attrs.get("meta") or {}
+    market_time = meta.get("regularMarketTime")
+    if market_time:
+        try:
+            return (
+                datetime.fromtimestamp(int(market_time), tz=timezone.utc),
+                "waktu transaksi terakhir dari penyedia data",
+            )
+        except (ValueError, OSError, TypeError):
+            pass
     try:
         stamp = df.index[-1]
         if isinstance(stamp, pd.Timestamp):
-            return stamp.to_pydatetime()
+            return stamp.to_pydatetime(), "awal sesi bar terakhir (perkiraan)"
     except Exception:
         pass
-    return None
+    return None, "tidak diketahui"
 
 
 def analyze_gold(
@@ -119,12 +136,19 @@ def analyze_gold(
 
     # 2. Kesegaran harga & status pasar
     market_status = market_hours.gold_market_status()
-    last_bar = _last_bar_time(df)
-    freshness = market_hours.describe_price_freshness(last_bar) if last_bar else {
-        "description": "Waktu bar terakhir tidak diketahui.",
-        "age_minutes": None,
-        "is_intraday_fresh": False,
-    }
+    last_price_time, time_basis = _last_price_time(df)
+    if last_price_time:
+        freshness = {
+            **market_hours.describe_price_freshness(last_price_time),
+            "basis": time_basis,
+        }
+    else:
+        freshness = {
+            "description": "Waktu harga terakhir tidak diketahui.",
+            "age_minutes": None,
+            "is_intraday_fresh": False,
+            "basis": time_basis,
+        }
 
     # 3. Skor makro (pengganti fundamental)
     macro = macro_engine.macro_score(use_cache=use_cache)

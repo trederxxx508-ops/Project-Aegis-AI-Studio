@@ -196,12 +196,53 @@ Spot XAU/USD **tidak tersedia gratis** pada penyedia data publik (`XAUUSD=X` men
 Sumber yang benar-benar terpakai selalu dicantumkan; bila yang terpakai adalah ETF,
 peringatan eksplisit muncul bahwa angkanya bukan harga per troy ounce.
 
-### Sentimen emas berlawanan arah dengan saham
+### Sentimen emas: analisis per-klausa, bukan hitung kata
 
 Kamus sentimen saham tidak bisa dipakai — bahkan sering terbalik artinya. Bagi saham
-"resesi" adalah kabar buruk; bagi emas justru mendorong harga naik. Karena itu modul ini
-memakai kamus tersendiri (perang, krisis, safe haven, pangkas suku bunga, bank sentral
-borong emas → naik; pengetatan, dolar menguat, selera risiko → turun).
+"resesi" adalah kabar buruk; bagi emas justru mendorong harga naik.
+
+Menghitung kata positif/negatif secara terpisah ternyata **tidak cukup akurat**. Tiga
+kegagalan nyata yang terukur:
+
+| Judul berita | Hitung kata | Seharusnya |
+|---|---|---|
+| "Gold rises as **dollar weakens**" | netral ❌ | naik |
+| "Treasury **yields climb**, pressuring gold" | netral ❌ | turun |
+| "Emas naik menyusul kenaikan suku bunga **ditunda**" | turun ❌ | naik |
+
+Penyebabnya: kata "dollar" dan "yields" diberi polaritas sendiri sehingga saling
+meniadakan dengan kata arah di sekitarnya, dan negasi tidak dikenali sama sekali.
+
+Sekarang kalimat dipecah menjadi klausa, lalu dinilai berdasarkan **apa yang bergerak dan
+ke mana arahnya**:
+
+- Klausa tentang **emas** → arah harga = arah sinyal
+- Klausa tentang **penggerak berlawanan** (dolar, imbal hasil, suku bunga) → sinyalnya
+  **kebalikan** arah tersebut
+- Klausa tanpa arah → dinilai dari peristiwa (perang, krisis, bank sentral borong emas)
+- **Negasi** ("ditunda", "batal", "postponed") membalik arah klausa
+
+Hasil pada 10 judul uji: **10/10 benar** (sebelumnya 7/10). Setiap penilaian menyertakan
+field `reason` sehingga bisa ditelusuri, bukan kotak hitam.
+
+Catatan: kata "rate" telanjang sengaja tidak dijadikan penggerak — *"inflation rate
+rises"* bullish untuk emas, sedangkan *"interest rate rises"* bearish. Hanya frasa yang
+jelas merujuk suku bunga yang didaftarkan.
+
+### Kesegaran data: sumber tercepat dipakai lebih dulu
+
+Indeks dolar broad FRED (`DTWEXBGS`) terbit mingguan dengan jeda — **terukur tertinggal 7
+hari** dibanding indeks dolar ICE di Yahoo, padahal keduanya mengukur hal yang sama.
+Karena itu untuk indikator ini sumber Yahoo dicoba lebih dulu, FRED jadi cadangan.
+Sumber yang benar-benar terpakai selalu dicantumkan pada hasil.
+
+**Umur data dihitung dalam hari kerja**, bukan hari kalender. Memakai hari kalender
+membuat data hari Kamis salah ditandai basi setiap hari Senin, padahal pasar memang
+tutup di akhir pekan.
+
+**Waktu harga memakai waktu transaksi terakhir**, bukan indeks bar. Bar harian menandai
+awal sesi, sehingga saat pasar berjalan sistem akan salah melaporkan harga "berumur 8
+jam" padahal baru saja bergerak. Field `basis` menyatakan dasar waktu yang dipakai.
 
 ### Jam pasar & kesegaran harga
 

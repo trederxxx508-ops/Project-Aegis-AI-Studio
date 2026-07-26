@@ -49,9 +49,43 @@ def test_empty_headlines_neutral():
     assert result["label"] == "NEUTRAL"
 
 
-def test_phrases_weigh_more_than_single_words():
-    with_phrase = gold_sentiment.score_gold_headlines(["Fed announces a rate cut this week"])
-    assert with_phrase["details"][0]["bullish_hits"] >= 2
+@pytest.mark.parametrize(
+    "headline,expect_bullish",
+    [
+        # Kasus yang dulu salah dinilai oleh penghitungan kata terpisah:
+        ("Gold rises as dollar weakens", True),
+        ("Gold falls as dollar strengthens", False),
+        ("Emas menguat setelah dolar melemah", True),
+        ("Treasury yields climb, pressuring gold", False),
+        ("Real yields fall to multi-year low", True),
+        # Negasi harus membalik arti
+        ("Harga emas naik menyusul kenaikan suku bunga ditunda", True),
+        ("Fed announces a rate cut this week", True),
+    ],
+)
+def test_directional_clauses_are_read_correctly(headline, expect_bullish):
+    """Arah penggerak berlawanan (dolar, imbal hasil) menentukan arah emas."""
+    detail = gold_sentiment.score_gold_headlines([headline])["details"][0]
+    if expect_bullish:
+        assert detail["polarity"] > 0, f"{headline} -> {detail['reason']}"
+    else:
+        assert detail["polarity"] < 0, f"{headline} -> {detail['reason']}"
+
+
+def test_every_verdict_carries_its_reason():
+    """Setiap penilaian harus bisa ditelusuri, bukan kotak hitam."""
+    result = gold_sentiment.score_gold_headlines([
+        "Gold rises as dollar weakens",
+        "Bank sentral China kembali borong emas",
+    ])
+    for detail in result["details"]:
+        assert detail["reason"], "penilaian tanpa alasan tidak bisa diperiksa"
+
+
+def test_ambiguous_driver_word_alone_carries_no_polarity():
+    """Kata 'dollar' sendirian tidak boleh menentukan arah — butuh kata arah."""
+    detail = gold_sentiment.score_gold_headlines(["Dollar and gold both in focus today"])["details"][0]
+    assert detail["polarity"] == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -163,10 +197,31 @@ def test_gold_allocation_capped_by_capital():
 def _fake_indicator(key, value, change_3m=0.0, avg_50=None, available=True, stale=False):
     return {
         "key": key, "label": macro_engine.LABELS[key], "available": available,
-        "value": value, "as_of": "2026-07-24", "age_days": 2, "stale": stale,
+        "value": value, "as_of": "2026-07-24", "age_days": 2,
+        "age_business_days": 2, "stale": stale,
         "source": "FRED (uji)", "change_1m": change_3m / 3, "change_3m": change_3m,
         "avg_50": avg_50, "observations": 300, "error": None,
     }
+
+
+def test_weekend_does_not_falsely_mark_data_as_stale():
+    """Data Kamis tidak boleh dianggap basi pada hari Senin.
+
+    Menghitung umur dalam hari kalender membuat setiap akhir pekan memicu
+    peringatan palsu; hari kerja adalah ukuran yang benar.
+    """
+    from datetime import date
+
+    kamis, senin = date(2026, 7, 23), date(2026, 7, 27)
+    assert (senin - kamis).days == 4                       # 4 hari kalender
+    assert macro_engine._business_days_between(kamis, senin) == 2  # hanya 2 hari kerja
+    assert 2 <= macro_engine.STALE_AFTER_BUSINESS_DAYS["real_yield_10y"]
+
+
+def test_dollar_prefers_the_timelier_source():
+    """Sumber tercepat dipakai lebih dulu untuk indikator yang FRED-nya lambat."""
+    assert "dollar_index" in macro_engine.PREFER_YAHOO_FIRST
+    assert macro_engine.YAHOO_PROXY["dollar_index"] == "DX-Y.NYB"
 
 
 def _patch_macro(monkeypatch, indicators):

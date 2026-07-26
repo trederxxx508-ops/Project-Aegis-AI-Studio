@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import csv
 import io
+
+import numpy as np
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -47,21 +49,30 @@ YAHOO_PROXY = {
     "dollar_index": "DX-Y.NYB",
 }
 
-# Batas umur data sebelum ditandai basi (hari kalender)
-STALE_AFTER_DAYS = {
-    "real_yield_10y": 5,
-    "breakeven_10y": 5,
-    "nominal_yield_10y": 5,
-    "dollar_index": 7,
-    "fed_funds_rate": 5,
-    "cpi": 45,
+# Indikator yang datanya lebih cepat tersedia di Yahoo daripada di FRED.
+# Indeks dolar broad FRED (DTWEXBGS) terbit mingguan dengan jeda — terukur
+# tertinggal sekitar 7 hari dibanding indeks dolar ICE di Yahoo, sementara
+# keduanya sama-sama mengukur kekuatan dolar. Karena kesegaran data adalah
+# tujuan utama modul ini, sumber tercepat dicoba lebih dulu.
+PREFER_YAHOO_FIRST = {"dollar_index"}
+
+# Batas umur data sebelum ditandai basi, dihitung dalam **hari kerja**.
+# Memakai hari kalender akan salah menandai data hari Kamis sebagai basi
+# setiap hari Senin, padahal pasar memang tutup di akhir pekan.
+STALE_AFTER_BUSINESS_DAYS = {
+    "real_yield_10y": 3,
+    "breakeven_10y": 3,
+    "nominal_yield_10y": 3,
+    "dollar_index": 4,
+    "fed_funds_rate": 3,
+    "cpi": 32,
 }
 
 LABELS = {
     "real_yield_10y": "Suku bunga riil 10 thn",
     "breakeven_10y": "Ekspektasi inflasi 10 thn",
     "nominal_yield_10y": "Imbal hasil obligasi 10 thn",
-    "dollar_index": "Indeks dolar (broad)",
+    "dollar_index": "Indeks dolar",
     "fed_funds_rate": "Suku bunga acuan The Fed",
     "cpi": "Indeks harga konsumen AS",
 }
@@ -164,26 +175,43 @@ def _average_of_last(series: list[tuple[date, float]], n: int) -> Optional[float
     return sum(v for _, v in series[-n:]) / n
 
 
+def _business_days_between(start: date, end: date) -> int:
+    """Jumlah hari kerja antara dua tanggal (akhir pekan tidak dihitung)."""
+    if end <= start:
+        return 0
+    return int(np.busday_count(start, end))
+
+
 def load_indicator(key: str, use_cache: bool = True) -> dict:
-    """Ambil satu indikator lengkap dengan asal-usul dan status kesegaran."""
+    """Ambil satu indikator lengkap dengan asal-usul dan status kesegaran.
+
+    Sumber dicoba berurutan dari yang paling cepat tersedia untuk indikator
+    tersebut; sumber yang benar-benar terpakai selalu dicantumkan.
+    """
     today = datetime.now(timezone.utc).date()
     series_id = SERIES[key]
-    source = f"FRED ({series_id})"
-    series: Optional[list[tuple[date, float]]] = None
-    error: Optional[str] = None
+    proxy = YAHOO_PROXY.get(key)
 
-    try:
-        series = fetch_fred_series(series_id, use_cache=use_cache)
-    except Exception as exc:
-        error = f"FRED gagal: {exc}"
-        proxy = YAHOO_PROXY.get(key)
+    attempts: list[tuple[str, callable]] = []
+    if key in PREFER_YAHOO_FIRST and proxy:
+        attempts.append((f"Yahoo Finance ({proxy})", lambda: _fetch_yahoo_proxy(proxy, use_cache=use_cache)))
+        attempts.append((f"FRED ({series_id}) — cadangan", lambda: fetch_fred_series(series_id, use_cache=use_cache)))
+    else:
+        attempts.append((f"FRED ({series_id})", lambda: fetch_fred_series(series_id, use_cache=use_cache)))
         if proxy:
-            try:
-                series = _fetch_yahoo_proxy(proxy, use_cache=use_cache)
-                source = f"Yahoo Finance ({proxy}) — cadangan"
-                error = None
-            except Exception as exc2:
-                error = f"{error}; proksi Yahoo gagal: {exc2}"
+            attempts.append((f"Yahoo Finance ({proxy}) — cadangan", lambda: _fetch_yahoo_proxy(proxy, use_cache=use_cache)))
+
+    series: Optional[list[tuple[date, float]]] = None
+    source = attempts[0][0]
+    errors: list[str] = []
+
+    for label, fetch in attempts:
+        try:
+            series = fetch()
+            source = label
+            break
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
 
     if series is None:
         return {
@@ -193,21 +221,23 @@ def load_indicator(key: str, use_cache: bool = True) -> dict:
             "value": None,
             "as_of": None,
             "age_days": None,
+            "age_business_days": None,
             "stale": None,
             "source": source,
-            "error": error,
+            "error": "; ".join(errors),
         }
 
     as_of, value = series[-1]
-    age_days = (today - as_of).days
+    age_business = _business_days_between(as_of, today)
     return {
         "key": key,
         "label": LABELS[key],
         "available": True,
         "value": round(value, 4),
         "as_of": as_of.isoformat(),
-        "age_days": age_days,
-        "stale": age_days > STALE_AFTER_DAYS.get(key, 7),
+        "age_days": (today - as_of).days,
+        "age_business_days": age_business,
+        "stale": age_business > STALE_AFTER_BUSINESS_DAYS.get(key, 4),
         "source": source,
         "change_1m": _change_over(series, 21),
         "change_3m": _change_over(series, 63),
@@ -384,7 +414,7 @@ def macro_score(use_cache: bool = True) -> dict:
         elif ind["stale"]:
             notes.append(
                 f"{ind['label']}: data terakhir {ind['as_of']} "
-                f"({ind['age_days']} hari lalu) — lebih lama dari biasanya."
+                f"({ind['age_business_days']} hari kerja lalu) — lebih lama dari biasanya."
             )
 
     available = sum(1 for _, ind in scorers.values() if ind["available"])

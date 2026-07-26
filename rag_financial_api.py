@@ -19,7 +19,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from services import fundamental_engine, market_data, risk_engine, scoring_engine, sentiment_engine
+from services import cache, market_data, scanner
+from services.analysis import analyze_ticker
 from services.rag_engine import rag_engine
 
 load_dotenv()
@@ -77,6 +78,24 @@ class AnalyzeResponse(BaseModel):
     sentiment: dict
     fundamental: dict
     risk_plan: dict
+    analyzed_at: Optional[str] = None
+
+
+class ScanRequest(BaseModel):
+    tickers: Optional[list[str]] = Field(
+        default=None, description="Daftar ticker. Kosongkan untuk memakai preset watchlist."
+    )
+    watchlist: Optional[str] = Field(
+        default=None, description=f"Preset watchlist: {', '.join(scanner.WATCHLISTS)}"
+    )
+    total_capital: float = Field(default=100_000_000, gt=0)
+    max_risk_pct: float = Field(default=0.02, gt=0, lt=1)
+    atr_multiplier: float = Field(default=2.0, gt=0, le=5)
+    win_rate: float = Field(default=0.55, ge=0, le=1)
+    reward_risk_ratio: float = Field(default=2.0, gt=0)
+    period: str = Field(default="1y")
+    min_score: float = Field(default=0.0, ge=0, le=100, description="Saring hasil di bawah skor ini")
+    use_cache: bool = Field(default=True)
 
 
 # ---------------------------------------------------------------------------
@@ -133,59 +152,85 @@ async def query_financial_data(request: QueryRequest) -> QueryResponse:
 
 @app.post("/analyze-stock", response_model=AnalyzeResponse, summary="Analisis Lengkap + Sinyal + Position Sizing")
 async def analyze_stock(request: AnalyzeRequest) -> AnalyzeResponse:
-    ticker = request.ticker.strip().upper()
-
-    # 1. Technical Engine
     try:
-        df = market_data.fetch_ohlcv(ticker, period=request.period)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Gagal mengambil data pasar: {exc}")
-
-    try:
-        indicators = market_data.compute_indicators(df)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    technical = market_data.technical_score(indicators)
-
-    # 2. Sentiment Engine (selalu punya fallback netral)
-    sentiment = sentiment_engine.sentiment_score(ticker)
-
-    # 3. Fundamental Engine (RAG -> rasio yfinance -> netral)
-    fundamental = fundamental_engine.score_fundamental(ticker, use_rag=request.use_rag)
-
-    # 4. Master Scoring Engine
-    verdict = scoring_engine.master_score(
-        fundamental=fundamental["score"],
-        technical=technical["score"],
-        sentiment=sentiment["score"],
-    )
-
-    # 5. Risk Engine — position sizing pada harga & volatilitas terkini
-    try:
-        risk_plan = risk_engine.calculate_position_size(
+        result = analyze_ticker(
+            request.ticker,
             total_capital=request.total_capital,
             max_risk_pct=request.max_risk_pct,
-            entry_price=indicators["last_price"],
-            atr_value=indicators["atr_14"],
             atr_multiplier=request.atr_multiplier,
             win_rate=request.win_rate,
             reward_risk_ratio=request.reward_risk_ratio,
+            period=request.period,
+            use_rag=request.use_rag,
+        )
+    except market_data.RateLimitedError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    except ValueError as exc:
+        # Ticker tidak ditemukan / data historis terlalu pendek
+        message = str(exc)
+        status = 404 if "Tidak ada data harga" in message else 422
+        raise HTTPException(status_code=status, detail=message)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal mengambil data pasar: {exc}")
+
+    return AnalyzeResponse(**result)
+
+
+@app.get("/watchlists", summary="Daftar Preset Watchlist")
+async def list_watchlists() -> dict:
+    return {
+        "watchlists": {name: tickers for name, tickers in scanner.WATCHLISTS.items()},
+        "default": "idx_bluechip",
+    }
+
+
+@app.post("/scan", summary="Pindai Watchlist Otomatis & Peringkat Saham Terbaik")
+async def scan_stocks(request: ScanRequest) -> dict:
+    if request.tickers:
+        tickers = request.tickers
+    else:
+        name = request.watchlist or "idx_bluechip"
+        if name not in scanner.WATCHLISTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Watchlist '{name}' tidak dikenal. Pilihan: {', '.join(scanner.WATCHLISTS)}",
+            )
+        tickers = scanner.WATCHLISTS[name]
+
+    try:
+        result = scanner.scan_watchlist(
+            tickers,
+            total_capital=request.total_capital,
+            max_risk_pct=request.max_risk_pct,
+            atr_multiplier=request.atr_multiplier,
+            win_rate=request.win_rate,
+            reward_risk_ratio=request.reward_risk_ratio,
+            period=request.period,
+            min_score=request.min_score,
+            use_cache=request.use_cache,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=f"Risk engine: {exc}")
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    return AnalyzeResponse(
-        ticker=ticker,
-        signal=verdict["signal"],
-        total_score=verdict["total_score"],
-        scores={"components": verdict["components"], "weights": verdict["weights"]},
-        technical={"indicators": indicators, **technical},
-        sentiment=sentiment,
-        fundamental=fundamental,
-        risk_plan=risk_plan,
-    )
+    if result["analyzed"] == 0:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Tidak ada satu pun ticker yang berhasil dianalisis. "
+                "Periksa koneksi internet atau simbol ticker. "
+                f"Detail: {result['errors'][:3]}"
+            ),
+        )
+
+    result["table"] = scanner.summarize(result)
+    return result
+
+
+@app.post("/cache/clear", summary="Kosongkan Cache Data Pasar")
+async def clear_cache() -> dict:
+    before = cache.stats()["entries"]
+    cache.clear()
+    return {"status": "ok", "cleared_entries": before}
 
 
 if __name__ == "__main__":

@@ -22,6 +22,16 @@ def make_ohlcv(days: int = 300, start_price: float = 1000.0, trend: float = 0.00
     )
 
 
+@pytest.fixture(autouse=True)
+def clear_market_cache():
+    """Cache TTL bersifat global — kosongkan agar test tidak saling bocor."""
+    from services import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def ohlcv_uptrend() -> pd.DataFrame:
     return make_ohlcv(trend=0.002)

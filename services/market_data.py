@@ -21,23 +21,66 @@ REQUIRED_COLUMNS = ("Open", "High", "Low", "Close", "Volume")
 # Data fetching
 # ---------------------------------------------------------------------------
 
+MAX_FETCH_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = (1.0, 3.0)  # jeda sebelum percobaan ke-2 dan ke-3
+
+
+class RateLimitedError(RuntimeError):
+    """Penyedia data menolak permintaan karena terlalu sering (HTTP 429)."""
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "429" in text or "too many requests" in text or "rate limit" in text
+
+
 def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
-    """Ambil data OHLCV historis via yfinance.
+    """Ambil data OHLCV historis via yfinance, dengan percobaan ulang.
 
     Ticker Bursa Efek Indonesia memakai sufiks ``.JK`` (contoh: ``BBCA.JK``).
+
+    Raises:
+        ValueError: simbol tidak dikenal atau data tidak lengkap.
+        RateLimitedError: penyedia data membatasi permintaan.
     """
+    import time
+
     import yfinance as yf  # lazy import: indikator tetap bisa dipakai offline
 
-    df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
-    if df is None or df.empty:
-        raise ValueError(
-            f"Tidak ada data harga untuk ticker '{ticker}'. "
-            "Pastikan simbol benar (saham IDX memakai sufiks .JK, mis. BBCA.JK)."
-        )
-    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
-    if missing:
-        raise ValueError(f"Data {ticker} tidak lengkap, kolom hilang: {missing}")
-    return df
+    last_error: Exception | None = None
+    for attempt in range(MAX_FETCH_ATTEMPTS):
+        try:
+            df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
+        except Exception as exc:  # jaringan putus / rate limit / API berubah
+            last_error = exc
+            if attempt < MAX_FETCH_ATTEMPTS - 1:
+                time.sleep(RETRY_BACKOFF_SECONDS[attempt])
+                continue
+            if _is_rate_limit(exc):
+                raise RateLimitedError(
+                    f"Penyedia data membatasi permintaan saat mengambil '{ticker}'. "
+                    "Tunggu sekitar satu menit lalu coba lagi, atau kurangi jumlah saham "
+                    "yang dipindai sekaligus."
+                ) from exc
+            raise ConnectionError(
+                f"Gagal mengambil data '{ticker}': {exc}. Periksa koneksi internet Anda."
+            ) from exc
+
+        if df is not None and not df.empty:
+            missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+            if missing:
+                raise ValueError(f"Data {ticker} tidak lengkap, kolom hilang: {missing}")
+            return df
+
+        # Respons kosong bisa berarti simbol salah, bisa juga throttling sesaat
+        if attempt < MAX_FETCH_ATTEMPTS - 1:
+            time.sleep(RETRY_BACKOFF_SECONDS[attempt])
+
+    raise ValueError(
+        f"Tidak ada data harga untuk ticker '{ticker}'. "
+        "Pastikan simbol benar (saham IDX memakai sufiks .JK, mis. BBCA.JK)."
+        + (f" Kesalahan terakhir: {last_error}" if last_error else "")
+    )
 
 
 # ---------------------------------------------------------------------------

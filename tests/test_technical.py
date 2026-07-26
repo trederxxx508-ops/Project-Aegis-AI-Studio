@@ -68,6 +68,56 @@ def test_compute_indicators_requires_enough_bars(ohlcv_uptrend):
         market_data.compute_indicators(ohlcv_uptrend.head(10))
 
 
+class _FakeTicker:
+    """Pengganti yfinance.Ticker untuk menguji logika percobaan ulang."""
+
+    def __init__(self, outcomes):
+        self._outcomes = outcomes
+
+    def history(self, **kwargs):
+        outcome = self._outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def _patch_yfinance(monkeypatch, outcomes):
+    import sys
+    import types
+
+    fake = types.ModuleType("yfinance")
+    holder = _FakeTicker(outcomes)
+    fake.Ticker = lambda ticker: holder
+    monkeypatch.setitem(sys.modules, "yfinance", fake)
+    monkeypatch.setattr(market_data, "RETRY_BACKOFF_SECONDS", (0.0, 0.0))
+
+
+def test_fetch_retries_then_succeeds(monkeypatch, ohlcv_uptrend):
+    _patch_yfinance(monkeypatch, [pd.DataFrame(), ohlcv_uptrend])
+    df = market_data.fetch_ohlcv("AAA.JK")
+    assert len(df) == len(ohlcv_uptrend)
+
+
+def test_fetch_rate_limit_raises_dedicated_error(monkeypatch):
+    err = RuntimeError("429 Too Many Requests")
+    _patch_yfinance(monkeypatch, [err, err, err])
+    with pytest.raises(market_data.RateLimitedError, match="membatasi permintaan"):
+        market_data.fetch_ohlcv("AAA.JK")
+
+
+def test_fetch_network_failure_raises_connection_error(monkeypatch):
+    err = OSError("connection reset by peer")
+    _patch_yfinance(monkeypatch, [err, err, err])
+    with pytest.raises(ConnectionError, match="koneksi internet"):
+        market_data.fetch_ohlcv("AAA.JK")
+
+
+def test_fetch_empty_everywhere_raises_value_error(monkeypatch):
+    _patch_yfinance(monkeypatch, [pd.DataFrame(), pd.DataFrame(), pd.DataFrame()])
+    with pytest.raises(ValueError, match="Tidak ada data harga"):
+        market_data.fetch_ohlcv("SALAH.JK")
+
+
 def test_technical_score_uptrend_beats_downtrend(ohlcv_uptrend, ohlcv_downtrend):
     score_up = market_data.technical_score(market_data.compute_indicators(ohlcv_uptrend))
     score_down = market_data.technical_score(market_data.compute_indicators(ohlcv_downtrend))

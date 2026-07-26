@@ -1,5 +1,13 @@
 # 🛡️ Project Aegis AI Studio — Stock AI Copilot
 
+> ## 🚀 Cara tercepat menjalankan (Windows)
+> 1. Pasang **Python** dari [python.org/downloads](https://www.python.org/downloads/) — ✅ centang **"Add Python to PATH"** saat instalasi
+> 2. Klik dua kali **`JALANKAN-WINDOWS.bat`**
+> 3. Tunggu (pertama kali 3–10 menit), dashboard terbuka sendiri di browser
+> 4. Buka tab **🔎 Pemindai Otomatis** → klik **Pindai Sekarang**
+>
+> macOS / Linux: jalankan `bash jalankan.sh`
+
 AI Stock Copilot & Decision Support System yang menggabungkan **5 sudut pandang analisis pasar saham** secara otomatis, sesuai Master Blueprint:
 
 | Engine | Fungsi |
@@ -33,15 +41,20 @@ AI Stock Copilot & Decision Support System yang menggabungkan **5 sudut pandang 
 ## 📁 Struktur Proyek
 
 ```
-rag_financial_api.py          # FastAPI backend: /upload-pdf, /query, /analyze-stock, /health
+JALANKAN-WINDOWS.bat          # Peluncur satu klik untuk Windows
+jalankan.sh                   # Peluncur untuk macOS / Linux
+rag_financial_api.py          # FastAPI backend: /scan, /analyze-stock, /upload-pdf, /query, /health
 services/
-  market_data.py              # Fetch OHLCV (yfinance) + indikator teknikal + skor teknikal
+  market_data.py              # Fetch OHLCV (yfinance, dengan retry) + indikator + skor teknikal
+  analysis.py                 # Pipeline satu ticker (dipakai endpoint & scanner)
+  scanner.py                  # Pemindai watchlist paralel + peringkat
+  cache.py                    # Cache TTL agar tidak menembak API berulang kali
   risk_engine.py              # Position sizing ATR + Fractional Kelly (Section 5 blueprint)
   sentiment_engine.py         # Skor sentimen berita 0-100
   fundamental_engine.py       # Skor fundamental: RAG → rasio yfinance → netral
   rag_engine.py               # LlamaIndex + Qdrant + OpenAI (lazy init)
   scoring_engine.py           # Master Scoring Engine + klasifikasi sinyal
-dashboard/streamlit_app.py    # Dashboard Streamlit (Phase 4)
+dashboard/streamlit_app.py    # Dashboard Streamlit — mode otomatis penuh
 web/aegis_copilot.html        # Aplikasi web mandiri (semua engine berjalan di browser)
 tests/                        # Pytest suite (offline, sumber eksternal di-mock)
 ```
@@ -86,9 +99,27 @@ OPENAI_API_KEY=sk-... docker compose up --build
 | Method | Endpoint | Deskripsi |
 |---|---|---|
 | `GET` | `/health` | Status API + kesiapan RAG |
+| `GET` | `/watchlists` | Daftar preset watchlist siap pakai |
+| `POST` | `/scan` | **Pemindai otomatis**: analisis banyak saham paralel, diperingkat skor tertinggi |
+| `POST` | `/analyze-stock` | Analisis lengkap satu saham: skor per engine, sinyal, rekomendasi lot |
 | `POST` | `/upload-pdf` | Upload & ingest laporan keuangan PDF ke Vector DB |
 | `POST` | `/query` | Tanya jawab atas laporan yang ter-ingest (jawaban + sumber kutipan) |
-| `POST` | `/analyze-stock` | Analisis lengkap: skor 0-100 per engine, sinyal akhir, rekomendasi lot |
+| `POST` | `/cache/clear` | Kosongkan cache data pasar (paksa ambil data terbaru) |
+
+### Contoh `/scan` — pemindai otomatis
+
+```bash
+curl -X POST http://localhost:8000/scan \
+  -H "Content-Type: application/json" \
+  -d '{"watchlist": "idx_bluechip", "total_capital": 100000000, "max_risk_pct": 0.02}'
+```
+
+Preset watchlist tersedia: `idx_bluechip`, `idx_energy_mining`, `idx_consumer_retail`, `us_megacap`.
+Atau kirim daftar sendiri: `{"tickers": ["BBCA.JK", "TLKM.JK", "ASII.JK"]}`.
+
+Respons memuat peringkat saham (`results`, terurut skor tertinggi), ringkasan siap-tabel (`table`),
+`top_pick`, jumlah `buy_candidates`, serta `errors` per ticker yang gagal — satu ticker bermasalah
+tidak menggagalkan seluruh pemindaian.
 
 ### Contoh `/analyze-stock`
 
@@ -136,6 +167,25 @@ pytest
 | `QDRANT_COLLECTION` | `financial_reports` | Nama koleksi vektor |
 | `AEGIS_API_URL` | `http://localhost:8000` | Lokasi backend untuk dashboard |
 
-## ⚠️ Disclaimer
+## 🔁 Ketahanan Operasional
 
-Output aplikasi ini bersifat **decision support**, bukan nasihat keuangan. Selalu lakukan riset mandiri dan konsultasikan keputusan investasi dengan profesional berlisensi.
+| Situasi | Yang dilakukan aplikasi |
+|---|---|
+| Penyedia data membatasi permintaan (HTTP 429) | Coba ulang 3× dengan jeda, lalu pesan jelas + saran (`429`) |
+| Koneksi internet putus | Pesan `ConnectionError` yang menyebut penyebabnya, bukan crash |
+| Ticker salah ketik | `404` dengan pengingat format `.JK` untuk saham IDX |
+| Satu saham gagal saat scanning | Dilewati, masuk daftar `errors`; saham lain tetap dianalisis |
+| Data harga sama diminta berulang | Dilayani dari cache (10 menit), hemat kuota API |
+| Tidak ada laporan PDF / rasio | Skor fundamental jatuh ke netral 50, pipeline tetap jalan |
+
+## ⚠️ Disclaimer Penting
+
+Output aplikasi ini bersifat **decision support**, bukan nasihat keuangan.
+
+**Tidak ada sistem — termasuk ini — yang bisa memprediksi pasar saham dengan probabilitas 100%.**
+Harga saham dipengaruhi peristiwa yang tidak dapat diketahui sebelumnya (kebijakan, berita mendadak,
+sentimen global). Yang bisa dilakukan sistem ini adalah membuat keputusan Anda **konsisten,
+berbasis data, dan terukur risikonya** — lewat stop loss otomatis berbasis volatilitas (ATR) dan
+pembatasan ukuran posisi, sehingga satu transaksi yang salah tidak menghabiskan modal.
+
+Selalu lakukan riset mandiri dan konsultasikan keputusan investasi dengan profesional berlisensi.

@@ -89,3 +89,60 @@ def test_analyze_stock_validates_params():
         json={"ticker": "BBCA.JK", "max_risk_pct": 5},  # 500% risiko -> invalid
     )
     assert resp.status_code == 422
+
+
+def test_watchlists_endpoint():
+    resp = client.get("/watchlists")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "idx_bluechip" in body["watchlists"]
+    assert body["default"] == "idx_bluechip"
+
+
+def test_scan_endpoint_ranks_results(monkeypatch):
+    trends = {"AAA.JK": 0.003, "BBB.JK": -0.003}
+
+    def fake_fetch(ticker, period="1y", interval="1d"):
+        if ticker not in trends:
+            raise ValueError(f"Tidak ada data harga untuk ticker '{ticker}'.")
+        return make_ohlcv(trend=trends[ticker])
+
+    monkeypatch.setattr(market_data, "fetch_ohlcv", fake_fetch)
+    monkeypatch.setattr(
+        sentiment_engine, "sentiment_score",
+        lambda t: {"score": 50.0, "label": "NEUTRAL", "headline_count": 0, "details": []},
+    )
+    monkeypatch.setattr(
+        fundamental_engine, "score_fundamental",
+        lambda t, use_rag=True: {"score": 60.0, "source": "yfinance_ratios"},
+    )
+
+    resp = client.post("/scan", json={"tickers": ["AAA.JK", "BBB.JK"], "use_cache": False})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["analyzed"] == 2
+    assert body["top_pick"] == "AAA.JK"
+    assert body["results"][0]["total_score"] >= body["results"][1]["total_score"]
+    assert len(body["table"]) == 2
+    assert body["table"][0]["ticker"] == "AAA.JK"
+
+
+def test_scan_unknown_watchlist():
+    resp = client.post("/scan", json={"watchlist": "tidak_ada"})
+    assert resp.status_code == 400
+    assert "tidak dikenal" in resp.json()["detail"]
+
+
+def test_scan_all_tickers_failing(monkeypatch):
+    def always_fail(ticker, period="1y", interval="1d"):
+        raise ValueError(f"Tidak ada data harga untuk ticker '{ticker}'.")
+
+    monkeypatch.setattr(market_data, "fetch_ohlcv", always_fail)
+    resp = client.post("/scan", json={"tickers": ["XXX.JK", "YYY.JK"], "use_cache": False})
+    assert resp.status_code == 502
+
+
+def test_cache_clear_endpoint():
+    resp = client.post("/cache/clear")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"

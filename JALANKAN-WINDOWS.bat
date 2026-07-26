@@ -81,12 +81,15 @@ echo    APLIKASI SIAP
 echo    Dashboard akan terbuka di browser Anda.
 echo    Dokumentasi API: http://127.0.0.1:8000/docs
 echo.
-echo    Tutup jendela ini untuk menghentikan aplikasi.
+echo    Tekan Ctrl+C di jendela ini untuk menghentikan aplikasi.
 echo  ==========================================================
 echo.
 
 python -m streamlit run dashboard\streamlit_app.py --server.port 8501
 
+REM --- Bersihkan: hentikan backend agar tidak tertinggal jalan --------
 echo.
-echo  Aplikasi dihentikan.
+echo  Menghentikan mesin analisis...
+taskkill /F /FI "WINDOWTITLE eq Aegis API*" >nul 2>&1
+echo  Aplikasi dihentikan sepenuhnya.
 pause

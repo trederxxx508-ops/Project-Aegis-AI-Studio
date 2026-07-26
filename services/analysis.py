@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from services import cache, fundamental_engine, market_data, risk_engine, scoring_engine, sentiment_engine
+from services.rag_engine import rag_engine
 
 # Data harga harian tidak berubah tiap detik — cache 10 menit sudah cukup
 OHLCV_TTL_SECONDS = 600
@@ -57,7 +58,10 @@ def analyze_ticker(
         sentiment = sentiment_engine.sentiment_score(ticker)
 
     # 3. Fundamental Engine (RAG -> rasio yfinance -> netral)
-    if use_cache and not use_rag:
+    # Hasil RAG tidak di-cache: pengguna bisa meng-upload laporan baru kapan
+    # saja dan harus langsung terlihat. Skor dari rasio publik aman di-cache.
+    rag_active = use_rag and rag_engine.is_ready
+    if use_cache and not rag_active:
         fundamental = cache.get_or_compute(
             f"fundamental:{ticker}",
             FUNDAMENTAL_TTL_SECONDS,

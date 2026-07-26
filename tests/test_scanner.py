@@ -86,6 +86,24 @@ def test_summarize_row_shape(mocked_market):
     assert rows[0]["stop_loss"] < rows[0]["price"] < rows[0]["take_profit"]
 
 
+def test_scan_flags_rate_limit(monkeypatch):
+    def rate_limited(ticker, period="1y", interval="1d"):
+        raise market_data.RateLimitedError("Penyedia data membatasi permintaan.")
+
+    monkeypatch.setattr(market_data, "fetch_ohlcv", rate_limited)
+    result = scanner.scan_watchlist(["AAA.JK", "BBB.JK"], use_cache=False)
+
+    assert result["analyzed"] == 0
+    assert result["rate_limited"] is True
+    assert all(e["rate_limited"] for e in result["errors"])
+
+
+def test_scan_not_flagged_rate_limit_for_other_errors(mocked_market):
+    result = scanner.scan_watchlist(["TIDAKADA.JK"], use_cache=False)
+    assert result["rate_limited"] is False
+    assert result["errors"][0]["kind"] == "ValueError"
+
+
 def test_watchlist_presets_are_valid():
     assert "idx_bluechip" in scanner.WATCHLISTS
     for name, tickers in scanner.WATCHLISTS.items():

@@ -177,6 +177,23 @@ pytest
 | Satu saham gagal saat scanning | Dilewati, masuk daftar `errors`; saham lain tetap dianalisis |
 | Data harga sama diminta berulang | Dilayani dari cache (10 menit), hemat kuota API |
 | Tidak ada laporan PDF / rasio | Skor fundamental jatuh ke netral 50, pipeline tetap jalan |
+| Kunci OpenAI belum diisi | Fitur RAG memberi pesan `503` yang jelas; fitur lain tetap jalan |
+
+## 🎯 Integritas Penilaian
+
+Dua keputusan desain agar skor tidak menyesatkan:
+
+**Saham datar dinilai netral, bukan overbought.** Rumus RSI standar membagi rata-rata
+kenaikan dengan rata-rata penurunan. Jika harga tidak bergerak sama sekali (saham tidak
+likuid atau disuspend), pembaginya nol dan implementasi naif menghasilkan RSI 100 —
+seolah-olah saham itu sedang euforia beli. Di sini kasus tersebut dikembalikan sebagai
+**RSI 50 (netral)**.
+
+**Rata-rata panjang tidak dinilai dari riwayat pendek.** EMA 200 yang dihitung dari data
+6 bulan tetap menghasilkan angka, tapi angkanya bukan rata-rata 200 hari. Bila riwayat
+kurang dari 200 bar, komponen tren EMA 200 diberi **nilai netral setengah** disertai
+catatan, bukan poin penuh. Snapshot indikator menyertakan `data_points`,
+`ema_50_reliable`, dan `ema_200_reliable` agar hal ini transparan.
 
 ## ⚠️ Disclaimer Penting
 

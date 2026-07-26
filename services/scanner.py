@@ -9,9 +9,12 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
+from services import market_data
 from services.analysis import analyze_ticker
 
-MAX_WORKERS = 8
+# Dijaga rendah dengan sengaja: penyedia data gratis membatasi permintaan
+# per IP. Paralelisme berlebihan justru memicu HTTP 429 dan memperlambat.
+MAX_WORKERS = 4
 
 # Preset watchlist siap pakai
 WATCHLISTS: dict[str, list[str]] = {
@@ -79,7 +82,12 @@ def scan_watchlist(
             try:
                 results.append(future.result())
             except Exception as exc:
-                errors.append({"ticker": tkr, "error": str(exc)})
+                errors.append({
+                    "ticker": tkr,
+                    "error": str(exc),
+                    "kind": type(exc).__name__,
+                    "rate_limited": isinstance(exc, market_data.RateLimitedError),
+                })
 
     results.sort(key=lambda r: r["total_score"], reverse=True)
     ranked = [r for r in results if r["total_score"] >= min_score]
@@ -95,6 +103,7 @@ def scan_watchlist(
         "passed_filter": len(ranked),
         "buy_candidates": len(buy_signals),
         "top_pick": ranked[0]["ticker"] if ranked else None,
+        "rate_limited": bool(errors) and all(e.get("rate_limited") for e in errors),
         "results": ranked,
         "errors": errors,
     }

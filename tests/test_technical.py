@@ -25,6 +25,46 @@ def test_rsi_all_gains_near_100():
     assert result.iloc[-1] > 99
 
 
+def test_rsi_flat_series_is_neutral_not_overbought():
+    """Saham datar (tidak likuid / disuspend) harus netral 50, bukan 100."""
+    flat = pd.Series([1000.0] * 60)
+    assert market_data.rsi(flat).iloc[-1] == 50.0
+
+
+def test_rsi_all_losses_near_zero():
+    series = pd.Series(np.linspace(200, 100, 60))
+    result = market_data.rsi(series).dropna()
+    assert result.iloc[-1] < 1
+
+
+def test_indicators_flag_short_history(ohlcv_uptrend):
+    short = ohlcv_uptrend.tail(40)
+    ind = market_data.compute_indicators(short)
+    assert ind["data_points"] == 40
+    assert ind["ema_50_reliable"] is False
+    assert ind["ema_200_reliable"] is False
+
+    full = market_data.compute_indicators(ohlcv_uptrend)
+    assert full["ema_50_reliable"] is True
+    assert full["ema_200_reliable"] is True
+
+
+def test_short_history_scores_neutral_not_full_marks(ohlcv_uptrend):
+    """Riwayat pendek tidak boleh menghasilkan poin tren penuh."""
+    short = market_data.compute_indicators(ohlcv_uptrend.tail(40))
+    score = market_data.technical_score(short)
+
+    # Tren naik kuat pada data pendek: EMA20 (10) + netral 7.5 + netral 10 = 27.5
+    assert score["breakdown"]["trend_ema"] <= 27.5
+    assert len(score["notes"]) == 2
+    assert any("EMA 200" in n for n in score["notes"])
+
+    # Data penuh dengan tren sama harus mendapat poin lebih tinggi
+    full = market_data.technical_score(market_data.compute_indicators(ohlcv_uptrend))
+    assert full["breakdown"]["trend_ema"] > score["breakdown"]["trend_ema"]
+    assert full["notes"] == []
+
+
 def test_macd_components_consistent(ohlcv_uptrend):
     close = ohlcv_uptrend["Close"]
     macd_line, signal_line, hist = market_data.macd(close)

@@ -22,6 +22,14 @@ SIGNAL_ICON = {
     "STRONG BUY": "🟢", "BUY": "🟢", "HOLD": "🟡", "SELL": "🔴", "STRONG SELL": "🔴",
 }
 
+
+def _detail(resp) -> str:
+    """Ambil pesan kesalahan backend; tahan terhadap respons non-JSON."""
+    try:
+        return resp.json().get("detail", resp.text)
+    except Exception:
+        return resp.text or f"Kesalahan HTTP {resp.status_code}"
+
 st.set_page_config(page_title="Aegis — Stock AI Copilot", page_icon="🛡️", layout="wide")
 st.title("🛡️ Project Aegis — Stock AI Copilot")
 st.caption("Otomatis: data pasar, indikator, sentimen, fundamental, dan ukuran posisi — dalam satu klik.")
@@ -132,15 +140,19 @@ with tab_scan:
                     json={**payload_source, **risk_params, "min_score": min_score},
                     timeout=600,
                 )
+                if resp.ok:
+                    st.session_state["scan"] = resp.json()
+                elif resp.status_code == 429:
+                    st.warning(
+                        "⏳ Penyedia data sedang membatasi permintaan. "
+                        "Tunggu sekitar satu menit, lalu coba lagi dengan daftar lebih pendek."
+                    )
+                else:
+                    st.error(_detail(resp))
+            except requests.Timeout:
+                st.error("Waktu tunggu habis. Coba kurangi jumlah saham yang dipindai.")
             except Exception as exc:
                 st.error(f"Gagal menghubungi backend: {exc}")
-                st.stop()
-
-        if not resp.ok:
-            st.error(resp.json().get("detail", resp.text))
-            st.stop()
-
-        st.session_state["scan"] = resp.json()
 
     scan = st.session_state.get("scan")
     if scan:
@@ -222,13 +234,21 @@ with tab_single:
                 resp = requests.post(
                     f"{api_url}/analyze-stock", json={"ticker": ticker, **risk_params}, timeout=180
                 )
+                if resp.ok:
+                    st.session_state["single"] = resp.json()
+                elif resp.status_code == 429:
+                    st.warning("⏳ Penyedia data membatasi permintaan. Tunggu sebentar lalu ulangi.")
+                elif resp.status_code == 404:
+                    st.error(
+                        f"Ticker '{ticker}' tidak ditemukan. "
+                        "Saham Indonesia memakai akhiran .JK — contoh: BBCA.JK"
+                    )
+                else:
+                    st.error(_detail(resp))
+            except requests.Timeout:
+                st.error("Waktu tunggu habis saat mengambil data. Coba lagi.")
             except Exception as exc:
                 st.error(f"Gagal menghubungi backend: {exc}")
-                st.stop()
-        if not resp.ok:
-            st.error(resp.json().get("detail", resp.text))
-            st.stop()
-        st.session_state["single"] = resp.json()
 
     data = st.session_state.get("single")
     if data:
@@ -305,8 +325,14 @@ with tab_upload:
                 if resp.ok:
                     d = resp.json()
                     st.success(f"✅ Selesai — {d['pages_processed']} halaman diproses.")
+                elif resp.status_code == 503:
+                    st.warning(
+                        "Fitur baca laporan PDF membutuhkan kunci OpenAI. "
+                        "Isi `OPENAI_API_KEY` di file `.env`, lalu jalankan ulang aplikasi. "
+                        "Fitur lain tetap berfungsi tanpa kunci ini."
+                    )
                 else:
-                    st.error(resp.json().get("detail", resp.text))
+                    st.error(_detail(resp))
             except Exception as exc:
                 st.error(f"Gagal: {exc}")
 
@@ -327,22 +353,25 @@ with tab_qa:
                 resp = requests.post(
                     f"{api_url}/query", json={"query": question, "top_k": top_k}, timeout=180
                 )
+                if resp.ok:
+                    d = resp.json()
+                    st.markdown("#### 💡 Jawaban")
+                    st.write(d["answer"])
+                    with st.expander("📚 Kutipan sumber"):
+                        for i, src in enumerate(d["sources"], start=1):
+                            st.markdown(
+                                f"**{i}. {src.get('file_name')} — hal. {src.get('page_label')} "
+                                f"(kemiripan {src.get('score', 0):.3f})**"
+                            )
+                            st.caption(
+                                src["content"][:600] + ("…" if len(src["content"]) > 600 else "")
+                            )
+                elif resp.status_code == 400:
+                    st.info("Belum ada laporan yang di-upload. Buka tab 📄 Upload Laporan dulu.")
+                else:
+                    st.error(_detail(resp))
             except Exception as exc:
                 st.error(f"Gagal: {exc}")
-                st.stop()
-        if not resp.ok:
-            st.error(resp.json().get("detail", resp.text))
-        else:
-            d = resp.json()
-            st.markdown("#### 💡 Jawaban")
-            st.write(d["answer"])
-            with st.expander("📚 Kutipan sumber"):
-                for i, src in enumerate(d["sources"], start=1):
-                    st.markdown(
-                        f"**{i}. {src.get('file_name')} — hal. {src.get('page_label')} "
-                        f"(kemiripan {src.get('score', 0):.3f})**"
-                    )
-                    st.caption(src["content"][:600] + ("…" if len(src["content"]) > 600 else ""))
 
 
 st.caption(

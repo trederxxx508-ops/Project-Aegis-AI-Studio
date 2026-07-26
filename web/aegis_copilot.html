@@ -372,6 +372,7 @@
         <p class="eyebrow">Snapshot Indikator Teknikal</p>
         <div class="kv" id="indGrid"></div>
         <p class="notebox" id="techBreakdown"></p>
+        <div id="techNotes"></div>
       </section>
 
       <section class="card hide" id="riskCard">
@@ -423,7 +424,9 @@ function rsiArr(v, period) {
     const g = Math.max(d, 0), l = Math.max(-d, 0);
     if (avgG === null) { avgG = g; avgL = l; }
     else { avgG += alpha * (g - avgG); avgL += alpha * (l - avgL); }
-    out[i] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
+    // Harga datar total (tanpa naik maupun turun) = netral 50, bukan 100.
+    if (avgL === 0) out[i] = avgG === 0 ? 50 : 100;
+    else out[i] = 100 - 100 / (1 + avgG / avgL);
   }
   return out;
 }
@@ -487,7 +490,11 @@ function computeIndicators(bars) {
   const last = a => a[a.length - 1];
   const r2 = x => Math.round(x * 100) / 100;
   const r4 = x => Math.round(x * 10000) / 10000;
+  const n = bars.length;
   return {
+    data_points: n,
+    ema_50_reliable: n >= 50,
+    ema_200_reliable: n >= 200,
     last_price: r2(last(close)),
     ema_20: r2(last(emaArr(close, 20))),
     ema_50: r2(last(emaArr(close, 50))),
@@ -505,12 +512,28 @@ function computeIndicators(bars) {
 function technicalScore(ind) {
   const price = ind.last_price;
   const breakdown = {};
+  const notes = [];
+  const ema50ok = ind.ema_50_reliable !== false;
+  const ema200ok = ind.ema_200_reliable !== false;
+
   let trend = 0;
   if (price > ind.ema_20) trend += 10;
-  if (price > ind.ema_50) trend += 10;
-  if (price > ind.ema_200) trend += 15;
-  if (ind.ema_20 > ind.ema_50) trend += 5;
-  if (ind.ema_50 > ind.ema_200) trend += 5;
+
+  if (ema50ok) {
+    if (price > ind.ema_50) trend += 10;
+    if (ind.ema_20 > ind.ema_50) trend += 5;
+  } else {
+    trend += 7.5; // netral: riwayat < 50 bar
+    notes.push("EMA 50 belum andal (data < 50 bar) — dinilai netral.");
+  }
+
+  if (ema200ok) {
+    if (price > ind.ema_200) trend += 15;
+    if (ema50ok && ind.ema_50 > ind.ema_200) trend += 5;
+  } else {
+    trend += 10; // netral: riwayat < 200 bar
+    notes.push("EMA 200 belum andal (data < 200 bar) — dinilai netral. Muat data ≥ 1 tahun untuk penilaian tren penuh.");
+  }
   breakdown.trend_ema = trend;
 
   const r = ind.rsi_14;
@@ -539,7 +562,7 @@ function technicalScore(ind) {
   breakdown.support_resistance = srScore;
 
   const total = Math.min(100, trend + momentum + mac + srScore);
-  return { score: Math.round(total * 100) / 100, breakdown };
+  return { score: Math.round(total * 100) / 100, breakdown, notes };
 }
 
 /* ---------- Risk Engine (port 1:1 dari services/risk_engine.py) ---------- */
@@ -907,7 +930,10 @@ function parseCsv(text) {
     $("techBreakdown").textContent =
       "Skor teknikal " + fmtNum.format(tech.score) + "/100 — tren EMA " + tech.breakdown.trend_ema +
       "/45 · momentum RSI " + tech.breakdown.momentum_rsi + "/20 · MACD " + tech.breakdown.macd +
-      "/25 · posisi S/R " + tech.breakdown.support_resistance + "/10.";
+      "/25 · posisi S/R " + tech.breakdown.support_resistance + "/10 · " +
+      ind.data_points + " bar data.";
+    $("techNotes").innerHTML = (tech.notes || []).map(n =>
+      '<div class="warnbox">ℹ️ ' + escapeHtml(n) + "</div>").join("");
 
     // risk table
     if (risk) {

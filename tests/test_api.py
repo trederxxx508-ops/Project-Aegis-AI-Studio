@@ -142,6 +142,26 @@ def test_scan_all_tickers_failing(monkeypatch):
     assert resp.status_code == 502
 
 
+def test_analyze_stock_rate_limit_returns_429(monkeypatch):
+    def rate_limited(ticker, period="1y", interval="1d"):
+        raise market_data.RateLimitedError("Penyedia data membatasi permintaan.")
+
+    monkeypatch.setattr(market_data, "fetch_ohlcv", rate_limited)
+    resp = client.post("/analyze-stock", json={"ticker": "BBCA.JK"})
+    assert resp.status_code == 429
+    assert "membatasi permintaan" in resp.json()["detail"]
+
+
+def test_scan_all_rate_limited_returns_429(monkeypatch):
+    def rate_limited(ticker, period="1y", interval="1d"):
+        raise market_data.RateLimitedError("Penyedia data membatasi permintaan.")
+
+    monkeypatch.setattr(market_data, "fetch_ohlcv", rate_limited)
+    resp = client.post("/scan", json={"tickers": ["AAA.JK", "BBB.JK"], "use_cache": False})
+    assert resp.status_code == 429
+    assert "Tunggu" in resp.json()["detail"]
+
+
 def test_cache_clear_endpoint():
     resp = client.post("/cache/clear")
     assert resp.status_code == 200

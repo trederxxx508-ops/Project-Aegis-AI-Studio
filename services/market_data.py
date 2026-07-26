@@ -95,7 +95,14 @@ def ema(series: pd.Series, span: int) -> pd.Series:
 
 
 def rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    """Relative Strength Index dengan smoothing Wilder."""
+    """Relative Strength Index dengan smoothing Wilder.
+
+    Kasus batas ditangani eksplisit:
+    - hanya kenaikan (rata-rata rugi 0)  -> 100
+    - harga datar total (naik & rugi 0)  -> 50, bukan 100. Saham tidak likuid
+      atau disuspend sering datar berhari-hari; menilainya "overbought ekstrem"
+      akan menyesatkan mesin skoring.
+    """
     if period <= 0:
         raise ValueError("period RSI harus > 0")
     delta = series.diff()
@@ -105,7 +112,9 @@ def rsi(series: pd.Series, period: int = 14) -> pd.Series:
     avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0.0, np.nan)
     out = 100.0 - (100.0 / (1.0 + rs))
-    return out.fillna(100.0).where(delta.notna(), np.nan)
+    flat = (avg_gain == 0) & (avg_loss == 0)
+    out = out.fillna(100.0).mask(flat, 50.0)
+    return out.where(delta.notna(), np.nan)
 
 
 def macd(
@@ -168,11 +177,19 @@ def support_resistance(
 # ---------------------------------------------------------------------------
 
 def compute_indicators(df: pd.DataFrame) -> dict:
-    """Hitung snapshot indikator dari DataFrame OHLCV harian."""
+    """Hitung snapshot indikator dari DataFrame OHLCV harian.
+
+    ``data_points`` dan flag ``*_reliable`` ikut dikembalikan: EMA dengan
+    span lebih panjang dari riwayat yang tersedia secara matematis tetap
+    menghasilkan angka, tapi angkanya tidak mewakili rata-rata sepanjang
+    itu. Mesin skoring memakai flag ini agar tidak menilai berdasarkan
+    rata-rata semu.
+    """
     if len(df) < 30:
         raise ValueError("Butuh minimal 30 bar data untuk menghitung indikator.")
 
     close = df["Close"]
+    bars = len(df)
     macd_line, signal_line, histogram = macd(close)
     sr = support_resistance(df)
 
@@ -189,6 +206,9 @@ def compute_indicators(df: pd.DataFrame) -> dict:
         "atr_14": round(last(atr(df, 14)), 4),
         "support": sr["support"],
         "resistance": sr["resistance"],
+        "data_points": bars,
+        "ema_50_reliable": bars >= 50,
+        "ema_200_reliable": bars >= 200,
     }
 
 
@@ -197,16 +217,38 @@ def technical_score(ind: dict) -> dict:
 
     Bobot: struktur tren EMA (45), momentum RSI (20), MACD (25),
     posisi terhadap Support/Resistance (10).
+
+    Komponen EMA yang riwayatnya belum cukup panjang (mis. EMA 200 dari
+    data 6 bulan) tidak dinilai penuh melainkan diberi nilai netral
+    setengah, agar skor tidak dibangun di atas rata-rata semu.
     """
     price = ind["last_price"]
     breakdown: dict[str, float] = {}
+    notes: list[str] = []
+
+    ema50_ok = ind.get("ema_50_reliable", True)
+    ema200_ok = ind.get("ema_200_reliable", True)
 
     trend = 0.0
     trend += 10 if price > ind["ema_20"] else 0
-    trend += 10 if price > ind["ema_50"] else 0
-    trend += 15 if price > ind["ema_200"] else 0
-    trend += 5 if ind["ema_20"] > ind["ema_50"] else 0
-    trend += 5 if ind["ema_50"] > ind["ema_200"] else 0
+
+    if ema50_ok:
+        trend += 10 if price > ind["ema_50"] else 0
+        trend += 5 if ind["ema_20"] > ind["ema_50"] else 0
+    else:
+        trend += 7.5  # netral: 10 + 5 poin, separuh
+        notes.append("EMA 50 belum andal (riwayat < 50 bar) — dinilai netral.")
+
+    if ema200_ok:
+        trend += 15 if price > ind["ema_200"] else 0
+        trend += 5 if (ema50_ok and ind["ema_50"] > ind["ema_200"]) else 0
+    else:
+        trend += 10.0  # netral: 15 + 5 poin, separuh
+        notes.append(
+            "EMA 200 belum andal (riwayat < 200 bar) — dinilai netral. "
+            "Pakai period '1y' atau lebih untuk penilaian tren penuh."
+        )
+
     breakdown["trend_ema"] = trend
 
     r = ind["rsi_14"]
@@ -240,4 +282,4 @@ def technical_score(ind: dict) -> dict:
     breakdown["support_resistance"] = sr_score
 
     total = round(min(100.0, sum(breakdown.values())), 2)
-    return {"score": total, "breakdown": breakdown}
+    return {"score": total, "breakdown": breakdown, "notes": notes}

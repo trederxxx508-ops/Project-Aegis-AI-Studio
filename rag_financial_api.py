@@ -213,6 +213,14 @@ async def scan_stocks(request: ScanRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc))
 
     if result["analyzed"] == 0:
+        if result["rate_limited"]:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Penyedia data sedang membatasi permintaan. Tunggu sekitar satu "
+                    "menit, lalu pindai lagi dengan daftar saham yang lebih pendek."
+                ),
+            )
         raise HTTPException(
             status_code=502,
             detail=(

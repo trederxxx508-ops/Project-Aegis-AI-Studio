@@ -106,6 +106,7 @@ OPENAI_API_KEY=sk-... docker compose up --build
 | `POST` | `/query` | Tanya jawab atas laporan yang ter-ingest (jawaban + sumber kutipan) |
 | `GET` | `/macro` | Kondisi makro ekonomi + asal-usul & kesegaran tiap indikator |
 | `POST` | `/analyze-gold` | **Analisis emas**: makro + teknikal + sentimen + ukuran posisi (USD/oz) |
+| `POST` | `/backtest` | **Uji mundur**: apakah sinyalnya terbukti? + kalibrasi win rate |
 | `POST` | `/cache/clear` | Kosongkan cache data pasar (paksa ambil data terbaru) |
 
 ### Contoh `/scan` — pemindai otomatis
@@ -207,6 +208,68 @@ borong emas → naik; pengetatan, dolar menguat, selera risiko → turun).
 Emas berdagang hampir 24 jam (Minggu 18:00 – Jumat 17:00 waktu New York, dengan jeda
 harian). Bila pasar tutup, sistem **menyatakannya terang-terangan** beserta umur harga
 terakhir — bukan menampilkan harga penutupan seolah harga sedang berjalan.
+
+## 🧪 Uji Mundur (Backtest) — bukti, bukan klaim
+
+Tanpa uji mundur, sistem bisa memberi skor 78/100 dengan meyakinkan tanpa ada bukti
+bahwa skor 78 lebih baik daripada skor 40. Modul ini menjawabnya dengan angka.
+
+### Tiga pengaman terhadap lookahead bias
+
+Lookahead bias — diam-diam memakai informasi masa depan — membuat hasil uji tampak hebat
+padahal mustahil ditiru. Justru berbahaya, karena pengguna mengira sistemnya terbukti.
+
+1. **Indikator kausal.** EMA/RSI/MACD/ATR nilainya pada bar ke-i hanya bergantung pada
+   bar 0..i, sehingga menghitung sekali secara vektor setara persis dengan menghitung
+   ulang pada jendela terpotong.
+2. **Support/Resistance versi kausal.** Versi langsung memakai pivot terpusat; di
+   backtest pivot hanya dikonfirmasi setelah seluruh jendelanya berlalu. Ada test yang
+   memastikan hasilnya **sama persis dengan yang dihitung sistem live pada tanggal itu**.
+3. **Masuk pada bar berikutnya.** Sinyal muncul pada penutupan bar ke-i, posisi dibuka
+   pada **pembukaan bar ke-i+1** — bukan pada harga yang sudah diketahui.
+
+Test kunci: `test_scores_do_not_change_when_future_bars_are_added` — skor pada bar ke-i
+harus identik, ada atau tidak ada data sesudahnya. Bila menambah bar masa depan mengubah
+skor masa lalu, berarti skor itu mengintip.
+
+### Asumsi konservatif
+
+- Bila stop loss dan target tersentuh pada bar yang sama, data harian tidak memberi tahu
+  urutannya → diasumsikan **stop loss yang kena** (pesimistis, bukan optimistis).
+- Posisi tidak menumpuk; satu posisi selesai dulu sebelum yang berikutnya.
+- **Belum** memperhitungkan biaya transaksi, pajak, dan slippage.
+- Hanya skor **teknikal** yang diuji — fundamental dan sentimen tidak punya riwayat yang
+  bisa diuji mundur secara jujur.
+
+### Perbandingan yang adil
+
+Membandingkan hasil saja menyesatkan, karena strategi hanya terpapar pasar sebagian
+waktu. Karena itu laporan menampilkan **hasil, penurunan terdalam, hasil per satuan
+risiko, dan persentase waktu terpapar** — untuk strategi maupun beli-dan-tahan.
+
+Hasil uji sungguhan (10 tahun, per Juli 2026):
+
+| Simbol | Transaksi | Win rate | Faktor profit | Hasil | Beli-tahan | Penurunan | Beli-tahan | Efisiensi |
+|---|---|---|---|---|---|---|---|---|
+| SPY | 105 | 43,8% | 1,79 | 156,8% | 208,1% | −18,1% | −34,1% | **8,65 vs 6,10** |
+| GLD | 105 | 47,6% | 1,78 | 159,7% | 220,5% | −17,6% | −26,4% | **9,07 vs 8,35** |
+| GC=F | 122 | 48,4% | 1,67 | 158,5% | 231,3% | −22,8% | −25,1% | 6,96 vs 9,23 |
+
+**Bacaan jujurnya:** faktor profit di atas 1,5 pada ketiga aset menunjukkan keunggulan
+statistik yang nyata dan konsisten. Namun **beli-dan-tahan tetap unggul dari sisi hasil
+mentah** selama dekade pasar naik ini. Kelebihan strategi ada pada **risiko yang jauh
+lebih rendah** — pada SPY, penurunan terdalamnya separuh dari beli-dan-tahan.
+
+### Kalibrasi ukuran posisi
+
+Selama ini `win_rate` diketik manual, sehingga Kelly Criterion menghitung memakai angka
+karangan. Endpoint `/backtest` mengembalikan `calibration` berisi win rate terukur dan
+Reward:Risk nyata — atau **menolak memberi angka** bila transaksinya di bawah 30, karena
+sampel sekecil itu tidak layak jadi dasar ukuran posisi.
+
+> Temuan nyata: win rate sesungguhnya **43–48%**, bukan 55% yang biasa diisi. Artinya
+> ukuran posisi yang selama ini dihitung **terlalu besar**. Dashboard memberi peringatan
+> otomatis bila angka yang Anda pakai menyimpang dari hasil uji.
 
 ## 🧮 Formula Risk Engine (Section 5 Blueprint)
 

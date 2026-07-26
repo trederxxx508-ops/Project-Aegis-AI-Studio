@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from services import cache, gold, macro_engine, market_data, scanner
+from services import backtest, cache, gold, macro_engine, market_data, scanner
 from services.analysis import analyze_ticker
 from services.rag_engine import rag_engine
 
@@ -92,6 +92,16 @@ class GoldRequest(BaseModel):
         default=None, description="Judul berita tambahan untuk ikut dinilai sentimennya"
     )
     use_cache: bool = Field(default=True)
+
+
+class BacktestRequest(BaseModel):
+    ticker: str = Field(description="Simbol yang diuji, mis. BBCA.JK atau GC=F (emas)")
+    period: str = Field(default="10y", description="Panjang riwayat, mis. 5y / 10y / max")
+    entry_threshold: float = Field(default=55.0, ge=0, le=100, description="Skor minimal untuk masuk")
+    atr_multiplier: float = Field(default=2.0, gt=0, le=5)
+    reward_risk_ratio: float = Field(default=2.0, gt=0)
+    max_holding_days: int = Field(default=60, ge=1, le=365)
+    include_trades: bool = Field(default=False, description="Sertakan rincian tiap transaksi")
 
 
 class ScanRequest(BaseModel):
@@ -276,6 +286,46 @@ async def analyze_gold_endpoint(request: GoldRequest) -> dict:
         raise HTTPException(status_code=502, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/backtest", summary="Uji Mundur: Apakah Skor Ini Terbukti Berguna?")
+async def run_backtest_endpoint(request: BacktestRequest) -> dict:
+    """Uji aturan sinyal pada data historis, tanpa memakai data masa depan.
+
+    Hasilnya juga menghasilkan kalibrasi win rate terukur, menggantikan angka
+    yang selama ini diisi manual oleh pengguna.
+    """
+    def _fetch(ticker: str, period: str = request.period):
+        # Simbol komoditas/indeks kerap gagal di klien yfinance; jalur chart
+        # API mandiri dipakai sebagai cadangan otomatis.
+        try:
+            return market_data.fetch_ohlcv(ticker, period=period)
+        except market_data.RateLimitedError:
+            raise
+        except Exception:
+            return market_data.fetch_chart_api(ticker, range_=period)
+
+    try:
+        result = backtest.backtest_ticker(
+            request.ticker,
+            period=request.period,
+            entry_threshold=request.entry_threshold,
+            atr_multiplier=request.atr_multiplier,
+            reward_risk_ratio=request.reward_risk_ratio,
+            max_holding_days=request.max_holding_days,
+            fetcher=_fetch,
+        )
+    except market_data.RateLimitedError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal menjalankan backtest: {exc}")
+
+    result["calibration"] = backtest.calibrated_risk_inputs(result)
+    if not request.include_trades:
+        result["trades"] = []
+    return result
 
 
 @app.post("/cache/clear", summary="Kosongkan Cache Data Pasar")

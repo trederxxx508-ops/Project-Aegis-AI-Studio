@@ -78,9 +78,9 @@ risk_params = {
     "reward_risk_ratio": reward_risk,
 }
 
-tab_scan, tab_single, tab_gold, tab_upload, tab_qa = st.tabs(
+tab_scan, tab_single, tab_gold, tab_test, tab_upload, tab_qa = st.tabs(
     ["🔎 Pemindai Otomatis", "📈 Analisis 1 Saham", "🥇 Emas & Makro",
-     "📄 Upload Laporan", "💬 Tanya Laporan"]
+     "🧪 Uji Mundur", "📄 Upload Laporan", "💬 Tanya Laporan"]
 )
 
 
@@ -448,7 +448,137 @@ with tab_gold:
 
 
 # ---------------------------------------------------------------------------
-# TAB 4 — Upload laporan keuangan
+# TAB 4 — Uji mundur (backtest)
+# ---------------------------------------------------------------------------
+with tab_test:
+    st.subheader("Apakah sinyal ini benar-benar terbukti?")
+    st.caption(
+        "Menguji aturan sinyal pada data bertahun-tahun ke belakang — "
+        "**tanpa mengintip data masa depan**. Hasilnya juga mengukur win rate "
+        "sesungguhnya, menggantikan angka yang selama ini Anda isi manual."
+    )
+
+    bcol1, bcol2, bcol3 = st.columns([2, 1, 1])
+    bt_ticker = bcol1.text_input("Simbol yang diuji", value="BBCA.JK",
+                                 help="Saham IDX pakai .JK · emas: GC=F · S&P 500: SPY")
+    bt_period = bcol2.selectbox("Panjang riwayat", ["5y", "10y", "max"], index=1)
+    bt_threshold = bcol3.slider("Ambang masuk", 40, 90, 55, 5)
+    run_bt = st.button("🧪 Jalankan Uji Mundur", type="primary",
+                       use_container_width=True, disabled=not api_ok)
+
+    if run_bt and bt_ticker.strip():
+        with st.spinner("Menguji ribuan bar data… ini bisa memakan waktu"):
+            try:
+                resp = requests.post(
+                    f"{api_url}/backtest",
+                    json={
+                        "ticker": bt_ticker,
+                        "period": bt_period,
+                        "entry_threshold": float(bt_threshold),
+                        "atr_multiplier": atr_multiplier,
+                        "reward_risk_ratio": reward_risk,
+                        "include_trades": True,
+                    },
+                    timeout=600,
+                )
+                if resp.ok:
+                    st.session_state["backtest"] = resp.json()
+                elif resp.status_code == 422:
+                    st.error(_detail(resp))
+                else:
+                    st.error(_detail(resp))
+            except requests.Timeout:
+                st.error("Waktu tunggu habis. Coba periode yang lebih pendek.")
+            except Exception as exc:
+                st.error(f"Gagal menghubungi backend: {exc}")
+
+    bt = st.session_state.get("backtest")
+    if bt:
+        s = bt["stats"]
+        if not s.get("trades"):
+            st.warning(s.get("verdict", "Tidak ada transaksi pada periode ini."))
+        else:
+            st.markdown(
+                f"### {bt.get('ticker')} · {bt['period']['from']} → {bt['period']['to']} "
+                f"({bt['period']['bars_tested']:,} hari diuji)"
+            )
+
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Transaksi", s["trades"])
+            k2.metric("Win rate nyata", f"{s['win_rate']*100:.1f}%")
+            k3.metric("Faktor profit", s["profit_factor"] or "—",
+                      help="Di atas 1 berarti untung; di atas 1,5 tergolong baik.")
+            k4.metric("Ekspektansi", f"{s['expectancy_pct']}%",
+                      help="Rata-rata hasil per transaksi.")
+
+            st.markdown("#### Perbandingan jujur terhadap sekadar beli lalu tahan")
+            banding = pd.DataFrame({
+                "Ukuran": ["Total hasil", "Penurunan terdalam",
+                           "Hasil per satuan risiko", "Waktu terpapar pasar"],
+                "Strategi ini": [
+                    f"{s['total_return_pct']}%", f"{s['max_drawdown_pct']}%",
+                    s["return_per_drawdown"] or "—", f"{s['market_exposure_pct']}%",
+                ],
+                "Beli & tahan": [
+                    f"{s['buy_and_hold_pct']}%", f"{s['buy_and_hold_max_drawdown_pct']}%",
+                    s["buy_and_hold_return_per_drawdown"] or "—", "100%",
+                ],
+            })
+            st.dataframe(banding, hide_index=True, use_container_width=True)
+
+            if s["beats_buy_and_hold"]:
+                st.success(s["verdict"])
+            else:
+                st.warning(s["verdict"])
+
+            o = s["outcomes"]
+            st.caption(
+                f"Rincian penutupan posisi: {o['take_profit']} kena target · "
+                f"{o['stop_loss']} kena stop loss · {o['timeout']} habis waktu · "
+                f"rata-rata ditahan {s['avg_holding_days']} hari."
+            )
+
+            # --- Kalibrasi risiko ---
+            calib = bt.get("calibration", {})
+            st.markdown("#### 🎯 Kalibrasi ukuran posisi")
+            if calib.get("usable"):
+                st.success(
+                    f"**Win rate terukur {calib['win_rate']*100:.1f}%** "
+                    f"(dari {calib['sample_size']} transaksi) · "
+                    f"Reward:Risk nyata {calib['reward_risk_ratio']}.  \n"
+                    "Isikan angka ini ke panel kiri agar ukuran posisi memakai "
+                    "hasil pengujian, bukan tebakan."
+                )
+                if abs(calib["win_rate"] - win_rate) > 0.03:
+                    arah = "lebih rendah" if calib["win_rate"] < win_rate else "lebih tinggi"
+                    st.warning(
+                        f"⚠️ Win rate yang Anda pakai sekarang ({win_rate*100:.0f}%) "
+                        f"{arah} dari hasil uji ({calib['win_rate']*100:.1f}%). "
+                        + ("Ukuran posisi Anda kemungkinan terlalu besar."
+                           if calib["win_rate"] < win_rate else
+                           "Ukuran posisi Anda kemungkinan terlalu kecil.")
+                    )
+            else:
+                st.info(f"Belum bisa dipakai untuk kalibrasi: {calib.get('reason')}")
+
+            with st.expander("📋 Asumsi & keterbatasan uji ini"):
+                for a in bt["assumptions"]:
+                    st.markdown(f"- {a}")
+
+            if bt.get("trades"):
+                with st.expander(f"📜 Rincian {len(bt['trades'])} transaksi"):
+                    st.dataframe(pd.DataFrame(bt["trades"]), hide_index=True,
+                                 use_container_width=True)
+                    st.download_button(
+                        "⬇️ Unduh transaksi (CSV)",
+                        data=pd.DataFrame(bt["trades"]).to_csv(index=False).encode("utf-8"),
+                        file_name=f"backtest-{bt.get('ticker','hasil')}.csv",
+                        mime="text/csv",
+                    )
+
+
+# ---------------------------------------------------------------------------
+# TAB 5 — Upload laporan keuangan
 # ---------------------------------------------------------------------------
 with tab_upload:
     st.subheader("Upload laporan keuangan (PDF)")

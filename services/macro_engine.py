@@ -268,22 +268,39 @@ def cpi_year_over_year(use_cache: bool = True) -> dict:
 # ---------------------------------------------------------------------------
 
 def _score_real_yield(ind: dict) -> tuple[float, float, str]:
-    """Suku bunga riil: 28 poin level + 12 poin arah. Maksimum 40."""
-    level_max, trend_max = 28.0, 12.0
+    """Suku bunga riil: 12 poin level + 28 poin arah. Maksimum 40.
+
+    Pembagian bobot ini diubah setelah pengujian terhadap data 2016-2026
+    (lihat ``scripts/validate_macro_relationship.py``, silakan jalankan
+    sendiri). Temuannya:
+
+    - **Arah** perubahan suku bunga riil berkorelasi negatif dengan imbal
+      hasil emas (-0,31 harian sampai -0,48 bulanan) — sesuai teori.
+    - **Level** suku bunga riil TIDAK mendukung teori pada sampel tersebut.
+      Justru saat level berada di 2-3% (yang model lama nilai buruk), imbal
+      hasil emas tiga bulan berikutnya rata-rata +8,15%, sementara saat level
+      di bawah 0% (yang model lama nilai terbaik) hanya +1,20%.
+
+    Karena itu bobot level diturunkan drastis alih-alih dibalik: membalik
+    berdasarkan satu rezim pasar berisiko menjadi curve-fitting, sementara
+    mempertahankan bobot besar pada asumsi yang tidak didukung data sama
+    saja dengan percaya diri tanpa dasar.
+    """
+    level_max, trend_max = 12.0, 28.0
     if not ind["available"]:
         return level_max / 2 + trend_max / 2, level_max + trend_max, "tidak tersedia"
 
     v = ind["value"]
     if v < 0:
-        level, desc = level_max, "negatif — sangat mendukung emas"
+        level, desc = level_max, "negatif secara teori mendukung emas"
     elif v < 1:
-        level, desc = level_max * 0.75, "rendah — mendukung emas"
+        level, desc = level_max * 0.75, "rendah"
     elif v < 2:
-        level, desc = level_max * 0.5, "sedang — netral"
+        level, desc = level_max * 0.5, "sedang"
     elif v < 3:
-        level, desc = level_max * 0.25, "tinggi — menekan emas"
+        level, desc = level_max * 0.25, "tinggi (level bukan peramal yang terbukti)"
     else:
-        level, desc = level_max * 0.12, "sangat tinggi — sangat menekan emas"
+        level, desc = level_max * 0.12, "sangat tinggi (level bukan peramal yang terbukti)"
 
     change = ind.get("change_3m")
     if change is None:
@@ -422,6 +439,15 @@ def macro_score(use_cache: bool = True) -> dict:
 
     return {
         "score": round(min(100.0, total), 2),
+        "interpretation": (
+            "Skor makro menggambarkan KONDISI SAAT INI, bukan ramalan harga. "
+            "Hubungan sewaktu antara suku bunga riil/dolar dengan emas terbukti "
+            "kuat (korelasi perubahan -0,31 s/d -0,48 pada data 2016-2026), "
+            "tetapi daya ramalnya terhadap imbal hasil ke depan TIDAK terbukti. "
+            "Skor rendah berarti angin makro sedang berlawanan — bukan berarti "
+            "harga emas pasti turun."
+        ),
+        "evidence_script": "scripts/validate_macro_relationship.py",
         "breakdown": breakdown,
         "completeness_pct": completeness,
         "components_available": available,

@@ -170,6 +170,50 @@ tahunan (`CPIAUCSL`) lengkap dengan tanggal terbitnya.
 **Tidak memerlukan kunci API.** Data diambil lewat endpoint CSV publik FRED. Bila FRED
 tidak terjangkau, tersedia proksi Yahoo Finance untuk sebagian indikator.
 
+### ⚠️ Model ini diuji terhadap datanya sendiri — dan sebagian tidak lolos
+
+Jalankan sendiri: `python scripts/validate_macro_relationship.py`
+
+**Yang terbukti** — hubungan sewaktu antara suku bunga riil dan emas nyata dan konsisten:
+
+| Rentang perubahan | Korelasi dengan imbal hasil emas |
+|---|---|
+| Harian | −0,31 |
+| Mingguan | −0,44 |
+| Bulanan | −0,48 |
+| Kuartalan | −0,45 |
+
+Arahnya negatif persis seperti teori: suku bunga riil naik → emas tertekan.
+
+**Yang TIDAK terbukti** — penilaian berdasarkan *level*. Model lama memberi 28 dari 40 poin
+pada level suku bunga riil, dengan asumsi level rendah = baik untuk emas. Data 2016–2026
+menunjukkan sebaliknya:
+
+| Level suku bunga riil | Nilai model lama | Imbal hasil emas 3 bulan berikutnya |
+|---|---|---|
+| −2% s/d 0% | terbaik (40/40) | **+1,20%** |
+| 0% s/d 1% | baik | +1,05% |
+| 1% s/d 2% | netral | +6,71% |
+| 2% s/d 3% | buruk (10/40) | **+8,15%** |
+
+Korelasi level terhadap imbal hasil ke depan: **+0,349** — berlawanan dengan asumsi model.
+
+**Yang dilakukan:** bobot level diturunkan dari 28 → 12 poin, arah dinaikkan 12 → 28 poin.
+Bobotnya **tidak dibalik**, karena membalik berdasarkan satu rezim pasar berisiko menjadi
+curve-fitting — sementara mempertahankan bobot besar pada asumsi tak berdasar sama saja
+dengan percaya diri tanpa dasar.
+
+**Keterbatasan yang harus dinyatakan:** sepuluh tahun terakhir adalah satu rezim di mana
+emas naik hampir terus-menerus; jendela tiga bulan saling tumpang tindih sehingga
+pengamatan independennya jauh lebih sedikit; dan sejak 2022 pembelian besar bank sentral
+mendorong emas naik bersamaan naiknya suku bunga riil — perancu yang tidak tertangkap
+model ini.
+
+> **Kesimpulan yang bisa dipertanggungjawabkan:** skor makro menggambarkan **kondisi saat
+> ini**, bukan ramalan harga. Skor rendah berarti angin makro sedang berlawanan — **bukan
+> berarti harga emas pasti turun.** Kalimat ini ikut disertakan pada setiap respons `/macro`
+> lewat field `interpretation`.
+
 ### Kejujuran data — mekanismenya, bukan sekadar janji
 
 1. **Setiap angka membawa asal-usul**: nilai, tanggal observasi, sumber, dan umur hari.

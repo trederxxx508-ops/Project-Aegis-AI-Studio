@@ -505,11 +505,36 @@ with tab_test:
 
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Transaksi", s["trades"])
-            k2.metric("Win rate nyata", f"{s['win_rate']*100:.1f}%")
+            base = s.get("random_baseline_win_rate")
+            k2.metric(
+                "Win rate nyata", f"{s['win_rate']*100:.1f}%",
+                delta=f"{s['edge_vs_random_pp']:+.1f} pp vs acak" if s.get("edge_vs_random_pp") is not None else None,
+                help="Bandingkan dengan garis acak, bukan dengan 100%.",
+            )
             k3.metric("Faktor profit", s["profit_factor"] or "—",
                       help="Di atas 1 berarti untung; di atas 1,5 tergolong baik.")
             k4.metric("Ekspektansi", f"{s['expectancy_pct']}%",
                       help="Rata-rata hasil per transaksi.")
+
+            # Win rate rendah itu wajar — yang menentukan adalah selisih
+            # terhadap titik masuk acak pada aturan keluar yang sama.
+            if base is not None:
+                noise = s.get("random_baseline_noise_pp") or 0
+                if s.get("edge_is_significant"):
+                    st.success(
+                        f"✅ **Win rate {s['win_rate']*100:.1f}% itu wajar** — masuk acak "
+                        f"pun hanya menghasilkan {base*100:.1f}% pada aturan keluar yang sama. "
+                        f"Sinyal ini unggul **{s['edge_vs_random_pp']:+.1f} poin persen**, "
+                        f"di luar rentang kebetulan (±{noise:.1f}) — pemilihan waktu masuk memang menambah nilai."
+                    )
+                else:
+                    st.warning(
+                        f"⚠️ **Win rate {s['win_rate']*100:.1f}% itu wajar secara matematis** — "
+                        f"masuk acak pun menghasilkan {base*100:.1f}% pada aturan keluar yang sama. "
+                        f"Tetapi selisihnya hanya **{s['edge_vs_random_pp']:+.1f} poin persen**, masih di "
+                        f"dalam rentang kebetulan (±{noise:.1f}). Artinya keuntungan yang ada "
+                        "terutama berasal dari **manajemen risiko**, bukan dari ketepatan sinyal."
+                    )
 
             st.markdown("#### Perbandingan jujur terhadap sekadar beli lalu tahan")
             banding = pd.DataFrame({

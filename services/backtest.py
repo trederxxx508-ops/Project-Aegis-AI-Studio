@@ -124,6 +124,95 @@ def technical_score_history(df: pd.DataFrame) -> pd.DataFrame:
 # Simulasi perdagangan
 # ---------------------------------------------------------------------------
 
+def _resolve_exit(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    entry_idx: int,
+    stop_price: float,
+    target_price: float,
+    max_holding_days: int,
+) -> tuple[int, float, str]:
+    """Telusuri bar berikutnya sampai posisi ditutup.
+
+    Asumsi pesimistis: bila stop loss dan target tersentuh pada bar yang sama,
+    data harian tidak memberi tahu urutannya, maka stop loss dianggap lebih dulu.
+    """
+    last_allowed = min(entry_idx + max_holding_days, len(closes) - 1)
+    for j in range(entry_idx, last_allowed + 1):
+        if lows[j] <= stop_price:
+            return j, stop_price, "stop_loss"
+        if highs[j] >= target_price:
+            return j, target_price, "take_profit"
+    return last_allowed, float(closes[last_allowed]), "timeout"
+
+
+def random_entry_baseline(
+    df: pd.DataFrame,
+    atr: pd.Series,
+    n_trades: int,
+    atr_multiplier: float,
+    reward_risk_ratio: float,
+    max_holding_days: int,
+    warmup: int,
+    rounds: int = 30,
+    seed: int = 12345,
+) -> Optional[dict]:
+    """Berapa win rate bila titik masuk dipilih **acak**, aturan keluar sama?
+
+    Ini pembanding yang membuat angka win rate bisa dinilai. Dengan target dua
+    kali lebih jauh daripada stop loss, harga harus bergerak dua kali lebih
+    jauh untuk menang — sehingga win rate rendah adalah hal yang wajar secara
+    matematis, bukan tanda sistem buruk. Yang menentukan ada tidaknya
+    keunggulan adalah selisih terhadap garis acak ini.
+    """
+    if n_trades <= 0 or len(df) <= warmup + 2:
+        return None
+
+    highs, lows, closes = df["High"].values, df["Low"].values, df["Close"].values
+    opens = df["Open"].values
+    rng = np.random.default_rng(seed)
+    candidates = np.arange(warmup, len(df) - 1)
+    if len(candidates) < 2:
+        return None
+
+    win_rates: list[float] = []
+    returns_all: list[float] = []
+    for _ in range(rounds):
+        picks = rng.choice(candidates, size=min(n_trades, len(candidates)), replace=False)
+        wins = 0
+        counted = 0
+        for i in picks:
+            atr_value = float(atr.iloc[i])
+            if not np.isfinite(atr_value) or atr_value <= 0:
+                continue
+            entry_idx = i + 1
+            entry_price = float(opens[entry_idx])
+            risk = atr_multiplier * atr_value
+            stop = entry_price - risk
+            if stop <= 0:
+                continue
+            target = entry_price + reward_risk_ratio * risk
+            exit_idx, exit_price, _ = _resolve_exit(
+                highs, lows, closes, entry_idx, stop, target, max_holding_days
+            )
+            ret = (exit_price - entry_price) / entry_price * 100
+            returns_all.append(ret)
+            wins += 1 if ret > 0 else 0
+            counted += 1
+        if counted:
+            win_rates.append(wins / counted)
+
+    if not win_rates:
+        return None
+    return {
+        "win_rate": round(float(np.mean(win_rates)), 4),
+        "win_rate_std": round(float(np.std(win_rates)), 4),
+        "avg_return_pct": round(float(np.mean(returns_all)), 4) if returns_all else None,
+        "rounds": len(win_rates),
+    }
+
+
 def _simulate_trades(
     df: pd.DataFrame,
     scores: pd.Series,
@@ -160,22 +249,9 @@ def _simulate_trades(
             continue
         target_price = entry_price + reward_risk_ratio * risk_per_unit
 
-        exit_idx: Optional[int] = None
-        exit_price: Optional[float] = None
-        outcome = ""
-
-        last_allowed = min(entry_idx + max_holding_days, n - 1)
-        for j in range(entry_idx, last_allowed + 1):
-            # Asumsi pesimistis: bila keduanya tersentuh dalam satu bar,
-            # anggap stop loss yang lebih dulu kena.
-            if lows[j] <= stop_price:
-                exit_idx, exit_price, outcome = j, stop_price, "stop_loss"
-                break
-            if highs[j] >= target_price:
-                exit_idx, exit_price, outcome = j, target_price, "take_profit"
-                break
-        if exit_idx is None:
-            exit_idx, exit_price, outcome = last_allowed, float(closes[last_allowed]), "timeout"
+        exit_idx, exit_price, outcome = _resolve_exit(
+            highs, lows, closes, entry_idx, stop_price, target_price, max_holding_days
+        )
 
         return_pct = (exit_price - entry_price) / entry_price * 100
         trades.append({
@@ -301,6 +377,32 @@ def _verdict(stats: dict) -> str:
            else "beli-dan-tahan lebih unggul dari sisi hasil.")
     )
 
+    # Win rate tanpa pembanding mudah disalahpahami sebagai "buruk".
+    acak = ""
+    base = stats.get("random_baseline_win_rate")
+    edge = stats.get("edge_vs_random_pp")
+    if base is not None and edge is not None:
+        wr = stats.get("win_rate")
+        signifikan = stats.get("edge_is_significant")
+        noise = stats.get("random_baseline_noise_pp")
+        acak = (
+            f" Win rate {wr*100:.1f}% harus dibandingkan dengan titik masuk ACAK "
+            f"pada aturan keluar yang sama, yaitu {base*100:.1f}% — jadi angka "
+            "serendah ini memang wajar secara matematis, bukan tanda sistem rusak. "
+        )
+        if signifikan:
+            acak += (
+                f"Selisihnya {edge:+.1f} poin persen dan berada di luar rentang "
+                f"kebetulan (±{noise:.1f}), sehingga pemilihan waktu masuk memang menambah nilai. "
+            )
+        else:
+            acak += (
+                f"Selisihnya hanya {edge:+.1f} poin persen, MASIH di dalam rentang "
+                f"kebetulan (±{noise:.1f}) — artinya keunggulan pemilihan waktu masuk "
+                "BELUM terbukti; keuntungan yang ada terutama berasal dari "
+                "manajemen risiko (stop loss ATR dan rasio imbal-risiko), bukan dari ketepatan sinyal. "
+            )
+
     # Perbandingan hasil saja tidak lengkap: strategi hanya terpapar pasar
     # sebagian waktu, sehingga risikonya berbeda.
     risiko = ""
@@ -316,7 +418,7 @@ def _verdict(stats: dict) -> str:
             f"(penurunan terdalam {stats['max_drawdown_pct']}% vs "
             f"{stats['buy_and_hold_max_drawdown_pct']}%)."
         )
-    return f"{dasar}: {mutu} {banding}{risiko}"
+    return f"{dasar}: {mutu}{acak} {banding}{risiko}"
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +461,36 @@ def run_backtest(
         warmup=warmup,
     )
     stats = _summarize(trades, df, warmup)
+
+    # Win rate hanya bisa dinilai bila dibandingkan dengan garis dasar acak:
+    # semakin jauh target dibanding stop loss, semakin rendah win rate yang
+    # wajar — tanpa pembanding ini angka 44% terlihat buruk padahal belum tentu.
+    baseline = random_entry_baseline(
+        df=df,
+        atr=history["atr"],
+        n_trades=stats.get("trades", 0),
+        atr_multiplier=atr_multiplier,
+        reward_risk_ratio=reward_risk_ratio,
+        max_holding_days=max_holding_days,
+        warmup=warmup,
+    )
+    if baseline and stats.get("win_rate") is not None:
+        edge = (stats["win_rate"] - baseline["win_rate"]) * 100
+        noise = baseline["win_rate_std"] * 100
+        stats["random_baseline_win_rate"] = baseline["win_rate"]
+        stats["random_baseline_noise_pp"] = round(noise, 2)
+        stats["edge_vs_random_pp"] = round(edge, 2)
+        stats["beats_random_entry"] = bool(edge > 0)
+        # Selisih yang lebih kecil daripada dua simpangan baku garis acak
+        # tidak boleh disebut keunggulan — itu masih dalam rentang kebetulan.
+        stats["edge_is_significant"] = bool(abs(edge) > 2 * noise) if noise > 0 else None
+    else:
+        stats["random_baseline_win_rate"] = None
+        stats["random_baseline_noise_pp"] = None
+        stats["edge_vs_random_pp"] = None
+        stats["beats_random_entry"] = None
+        stats["edge_is_significant"] = None
+
     stats["verdict"] = _verdict(stats)
 
     return {

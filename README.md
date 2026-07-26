@@ -255,10 +255,42 @@ Hasil uji sungguhan (10 tahun, per Juli 2026):
 | GLD | 105 | 47,6% | 1,78 | 159,7% | 220,5% | −17,6% | −26,4% | **9,07 vs 8,35** |
 | GC=F | 122 | 48,4% | 1,67 | 158,5% | 231,3% | −22,8% | −25,1% | 6,96 vs 9,23 |
 
-**Bacaan jujurnya:** faktor profit di atas 1,5 pada ketiga aset menunjukkan keunggulan
-statistik yang nyata dan konsisten. Namun **beli-dan-tahan tetap unggul dari sisi hasil
-mentah** selama dekade pasar naik ini. Kelebihan strategi ada pada **risiko yang jauh
-lebih rendah** — pada SPY, penurunan terdalamnya separuh dari beli-dan-tahan.
+### Kenapa win rate hanya 44%? Karena memang seharusnya begitu
+
+Win rate 44% terlihat buruk bila dibandingkan dengan 100%. Pembanding yang benar adalah
+**titik masuk acak pada aturan keluar yang sama**. Dengan target dua kali lebih jauh
+daripada stop loss, harga harus bergerak dua kali lebih jauh untuk menang — sehingga win
+rate rendah adalah konsekuensi matematis, bukan tanda sistem rusak.
+
+| R:R | Win rate sinyal | Win rate masuk **acak** | Selisih | Total hasil |
+|---|---|---|---|---|
+| 1 : 1 | 61,5% | 58,7% | +2,9 pp | 227,6% |
+| 2 : 1 | 43,8% | 44,5% | −0,7 pp | 156,8% |
+| 3 : 1 | 44,0% | 40,2% | +3,8 pp | 218,1% |
+
+Perhatikan baris R:R 0,5 pada pengujian lain: win rate **72%** (terlihat hebat) tetapi
+total hasil justru **paling rendah** (94,6%). **Win rate tinggi ≠ lebih untung.**
+
+### Temuan paling jujur: keunggulan sinyal BELUM terbukti
+
+Dari 9 pengujian (3 aset × 3 rasio imbal-risiko), 8 menunjukkan selisih positif terhadap
+masuk acak — tetapi **setiap selisih masih berada di dalam rentang kebetulan** (di bawah
+dua simpangan baku garis acak, ±3–5 poin persen).
+
+Kesimpulan yang bisa dipertanggungjawabkan:
+
+> Keuntungan sistem ini **terutama berasal dari manajemen risiko** — stop loss berbasis
+> ATR yang memotong kerugian cepat dan rasio imbal-risiko yang membiarkan keuntungan
+> berjalan — **bukan dari ketepatan sinyal dalam memilih waktu masuk.**
+
+Karena itu `edge_is_significant` disertakan pada hasil, dan dashboard **menolak menyebut
+selisih kecil sebagai keunggulan**. Sistem yang jujur harus berani mengatakan
+"ini belum terbukti" tentang dirinya sendiri.
+
+**Bacaan lengkapnya:** faktor profit di atas 1,5 pada ketiga aset menunjukkan hasil
+positif yang konsisten. Namun **beli-dan-tahan tetap unggul dari sisi hasil mentah**
+selama dekade pasar naik ini. Kelebihan strategi ada pada **risiko yang jauh lebih
+rendah** — pada SPY, penurunan terdalamnya separuh dari beli-dan-tahan.
 
 ### Kalibrasi ukuran posisi
 

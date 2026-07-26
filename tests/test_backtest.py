@@ -204,6 +204,71 @@ def test_verdict_reports_risk_efficiency_when_return_lags():
     assert "76.0%" in verdict
 
 
+def test_random_baseline_makes_win_rate_interpretable():
+    """Win rate tanpa pembanding acak mudah disalahpahami sebagai 'buruk'."""
+    df = make_ohlcv(days=600, trend=0.001)
+    result = backtest.run_backtest(df, entry_threshold=50.0, warmup=200)
+    stats = result["stats"]
+
+    assert stats["random_baseline_win_rate"] is not None
+    assert 0 <= stats["random_baseline_win_rate"] <= 1
+    assert stats["edge_vs_random_pp"] == pytest.approx(
+        (stats["win_rate"] - stats["random_baseline_win_rate"]) * 100, abs=0.01
+    )
+
+
+def test_wider_target_lowers_random_baseline_win_rate():
+    """Target yang lebih jauh membuat win rate rendah secara struktural.
+
+    Inilah sebabnya win rate 44% pada R:R 2:1 tidak boleh dinilai buruk
+    tanpa melihat pembandingnya.
+    """
+    df = make_ohlcv(days=600, trend=0.0005)
+    atr = backtest.technical_score_history(df)["atr"]
+
+    sempit = backtest.random_entry_baseline(
+        df, atr, n_trades=60, atr_multiplier=2.0, reward_risk_ratio=1.0,
+        max_holding_days=60, warmup=200, rounds=15,
+    )
+    lebar = backtest.random_entry_baseline(
+        df, atr, n_trades=60, atr_multiplier=2.0, reward_risk_ratio=4.0,
+        max_holding_days=60, warmup=200, rounds=15,
+    )
+    assert sempit["win_rate"] > lebar["win_rate"]
+
+
+def test_small_edge_is_not_called_significant():
+    """Selisih di dalam rentang kebetulan tidak boleh diklaim sebagai keunggulan."""
+    stats = {
+        "trades": 100, "profit_factor": 1.8, "total_return_pct": 150.0,
+        "buy_and_hold_pct": 200.0, "beats_buy_and_hold": False, "win_rate": 0.44,
+        "random_baseline_win_rate": 0.445, "random_baseline_noise_pp": 4.1,
+        "edge_vs_random_pp": -0.5, "edge_is_significant": False,
+        "max_drawdown_pct": -18.0, "buy_and_hold_max_drawdown_pct": -34.0,
+        "return_per_drawdown": 8.3, "buy_and_hold_return_per_drawdown": 5.9,
+        "market_exposure_pct": 76.0,
+    }
+    verdict = backtest._verdict(stats)
+    assert "BELUM terbukti" in verdict
+    assert "manajemen risiko" in verdict
+    assert "wajar secara matematis" in verdict
+
+
+def test_significant_edge_is_reported_as_such():
+    stats = {
+        "trades": 100, "profit_factor": 2.0, "total_return_pct": 250.0,
+        "buy_and_hold_pct": 100.0, "beats_buy_and_hold": True, "win_rate": 0.60,
+        "random_baseline_win_rate": 0.44, "random_baseline_noise_pp": 3.0,
+        "edge_vs_random_pp": 16.0, "edge_is_significant": True,
+        "max_drawdown_pct": -15.0, "buy_and_hold_max_drawdown_pct": -30.0,
+        "return_per_drawdown": 16.7, "buy_and_hold_return_per_drawdown": 3.3,
+        "market_exposure_pct": 50.0,
+    }
+    verdict = backtest._verdict(stats)
+    assert "di luar rentang kebetulan" in verdict
+    assert "memang menambah nilai" in verdict
+
+
 def test_assumptions_are_disclosed():
     df = make_ohlcv(days=400)
     result = backtest.run_backtest(df, warmup=200)

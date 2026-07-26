@@ -63,7 +63,10 @@ class AnalyzeRequest(BaseModel):
     total_capital: float = Field(default=100_000_000, gt=0, description="Total modal (IDR)")
     max_risk_pct: float = Field(default=0.02, gt=0, lt=1, description="Risiko per trade (0.02 = 2%)")
     atr_multiplier: float = Field(default=2.0, gt=0, le=5)
-    win_rate: float = Field(default=0.55, ge=0, le=1)
+    win_rate: Optional[float] = Field(
+        default=None, ge=0, le=1,
+        description="Kosongkan bila belum diukur — Kelly tidak diterapkan atas tebakan.",
+    )
     reward_risk_ratio: float = Field(default=2.0, gt=0)
     period: str = Field(default="1y", description="Periode data historis yfinance")
     use_rag: bool = Field(default=True, description="Pakai laporan PDF ter-ingest untuk skor fundamental")
@@ -85,7 +88,10 @@ class GoldRequest(BaseModel):
     total_capital: float = Field(default=10_000, gt=0, description="Total modal dalam USD")
     max_risk_pct: float = Field(default=0.02, gt=0, lt=1)
     atr_multiplier: float = Field(default=2.0, gt=0, le=5)
-    win_rate: float = Field(default=0.55, ge=0, le=1)
+    win_rate: Optional[float] = Field(
+        default=None, ge=0, le=1,
+        description="Kosongkan bila belum diukur — Kelly tidak diterapkan atas tebakan.",
+    )
     reward_risk_ratio: float = Field(default=2.0, gt=0)
     period: str = Field(default="1y")
     extra_headlines: Optional[list[str]] = Field(
@@ -114,7 +120,10 @@ class ScanRequest(BaseModel):
     total_capital: float = Field(default=100_000_000, gt=0)
     max_risk_pct: float = Field(default=0.02, gt=0, lt=1)
     atr_multiplier: float = Field(default=2.0, gt=0, le=5)
-    win_rate: float = Field(default=0.55, ge=0, le=1)
+    win_rate: Optional[float] = Field(
+        default=None, ge=0, le=1,
+        description="Kosongkan bila belum diukur — Kelly tidak diterapkan atas tebakan.",
+    )
     reward_risk_ratio: float = Field(default=2.0, gt=0)
     period: str = Field(default="1y")
     min_score: float = Field(default=0.0, ge=0, le=100, description="Saring hasil di bawah skor ini")

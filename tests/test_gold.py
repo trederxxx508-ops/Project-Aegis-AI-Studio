@@ -110,8 +110,22 @@ def test_gold_position_sizing_allows_fractional_ounces():
     assert isinstance(result["recommended_units"], float)
     assert 0 < result["recommended_units"] < 3
     assert result["stop_loss_price"] == 3_900.0
-    # Risiko nyata tidak boleh melebihi batas yang diminta
-    assert result["max_potential_loss"] <= 10_000 * 0.02 * 1.1
+    # Risiko nyata tidak boleh melebihi batas yang diminta, sekecil apa pun
+    assert result["max_potential_loss"] <= 10_000 * 0.02
+    assert result["within_risk_budget"] is True
+    assert result["actual_risk_pct"] <= 2.0
+
+
+def test_fractional_units_never_round_up_past_the_risk_cap():
+    """Pembulatan ke atas sekecil apa pun tetap melanggar batas risiko."""
+    for entry, atr in [(4070.8, 78.13), (1234.56, 19.87), (999.99, 7.77)]:
+        result = risk_engine.calculate_position_size(
+            total_capital=10_000, max_risk_pct=0.02, entry_price=entry,
+            atr_value=atr, unit_size=1, allow_fractional=True,
+            unit_name="troy ounce", currency="USD",
+        )
+        assert result["within_risk_budget"] is True, f"gagal pada entry {entry}"
+        assert result["max_potential_loss"] <= 10_000 * 0.02 + 1e-9
 
 
 def test_stock_sizing_still_whole_lots_by_default():
@@ -121,7 +135,9 @@ def test_stock_sizing_still_whole_lots_by_default():
     assert isinstance(result["recommended_units"], int)
     assert result["currency"] == "IDR"
     assert result["unit_name"] == "lot"
-    assert result["recommended_units"] == result["recommended_lots"] == 432
+    # 400, bukan 432: Kelly tidak berjalan tanpa win rate terukur
+    assert result["recommended_units"] == result["recommended_lots"] == 400
+    assert result["within_risk_budget"] is True
 
 
 def test_gold_allocation_capped_by_capital():

@@ -59,8 +59,32 @@ with st.sidebar:
     )
     max_risk_pct = st.slider("Risiko per transaksi (%)", 0.5, 10.0, 2.0, 0.5) / 100
     atr_multiplier = st.slider("ATR multiplier (k)", 1.0, 3.0, 2.0, 0.25)
-    win_rate = st.slider("Win rate historis", 0.30, 0.80, 0.55, 0.05)
     reward_risk = st.slider("Reward : Risk", 1.0, 4.0, 2.0, 0.5)
+
+    # Kelly hanya sah dipakai bila keunggulan sudah diukur. Tanpa pengukuran,
+    # membesarkan posisi berarti menambah risiko berdasarkan tebakan.
+    st.markdown("**Win rate**")
+    sudah_diukur = st.checkbox(
+        "Sudah saya ukur lewat Uji Mundur",
+        value=False,
+        help="Uji mundur mengukur win rate sesungguhnya. Tanpa itu, Kelly tidak diterapkan.",
+    )
+    if sudah_diukur:
+        measured = st.session_state.get("calibrated_win_rate")
+        win_rate = st.slider(
+            "Win rate terukur", 0.20, 0.80,
+            float(measured) if measured else 0.44, 0.01,
+        )
+        st.caption(
+            f"Dipakai untuk Kelly. Hasil uji pada SPY/emas: 43–48%."
+            + (f" Terkalibrasi: {measured*100:.1f}%." if measured else "")
+        )
+    else:
+        win_rate = None
+        st.caption(
+            "⚖️ Kelly dimatikan — ukuran posisi murni dari batas risiko Anda. "
+            "Ini pilihan paling aman selagi keunggulan belum terbukti."
+        )
 
     st.divider()
     if st.button("🧹 Kosongkan cache data", use_container_width=True):
@@ -287,15 +311,22 @@ with tab_single:
             st.dataframe(
                 pd.DataFrame({
                     "Parameter": ["Harga masuk", "Stop loss", "Take profit", "Lot",
-                                  "Total alokasi", "Maks. rugi", "Eksposur portofolio"],
+                                  "Total alokasi", "Maks. rugi",
+                                  "Risiko nyata vs batas", "Eksposur portofolio"],
                     "Nilai": [f"{rp['entry_price']:,.0f}", f"{rp['stop_loss_price']:,.0f}",
                               f"{rp['take_profit_price']:,.0f}", f"{rp['recommended_lots']} lot",
                               f"Rp {rp['total_allocation']:,.0f}",
                               f"Rp {rp['max_potential_loss']:,.0f}",
+                              f"{rp.get('actual_risk_pct', 0):.2f}% dari {rp.get('risk_budget_pct', 0):.2f}%",
                               f"{rp['portfolio_exposure_pct']:.2f} %"],
                 }),
                 hide_index=True, use_container_width=True,
             )
+            if rp.get("within_risk_budget") is False:
+                st.error(
+                    f"🚨 Risiko nyata {rp['actual_risk_pct']:.2f}% MELAMPAUI batas "
+                    f"{rp['risk_budget_pct']:.2f}% yang Anda tetapkan."
+                )
             for w in rp.get("warnings", []):
                 st.warning(w)
 
@@ -429,11 +460,12 @@ with tab_gold:
             pd.DataFrame({
                 "Parameter": ["Harga masuk", "Stop loss", "Take profit",
                               f"Ukuran ({rp['unit_name']})", "Total alokasi",
-                              "Maks. rugi", "Eksposur portofolio"],
+                              "Maks. rugi", "Risiko nyata vs batas", "Eksposur portofolio"],
                 "Nilai": [f"${rp['entry_price']:,.2f}", f"${rp['stop_loss_price']:,.2f}",
                           f"${rp['take_profit_price']:,.2f}", f"{rp['recommended_units']}",
                           f"${rp['total_allocation']:,.2f}",
                           f"${rp['max_potential_loss']:,.2f}",
+                          f"{rp.get('actual_risk_pct', 0):.2f}% dari {rp.get('risk_budget_pct', 0):.2f}%",
                           f"{rp['portfolio_exposure_pct']:.2f}%"],
             }),
             hide_index=True, use_container_width=True,
@@ -567,14 +599,15 @@ with tab_test:
             calib = bt.get("calibration", {})
             st.markdown("#### 🎯 Kalibrasi ukuran posisi")
             if calib.get("usable"):
+                st.session_state["calibrated_win_rate"] = calib["win_rate"]
                 st.success(
                     f"**Win rate terukur {calib['win_rate']*100:.1f}%** "
                     f"(dari {calib['sample_size']} transaksi) · "
                     f"Reward:Risk nyata {calib['reward_risk_ratio']}.  \n"
-                    "Isikan angka ini ke panel kiri agar ukuran posisi memakai "
-                    "hasil pengujian, bukan tebakan."
+                    "Angka ini tersimpan. Centang **“Sudah saya ukur lewat Uji Mundur”** "
+                    "di panel kiri agar ukuran posisi memakai hasil pengukuran, bukan tebakan."
                 )
-                if abs(calib["win_rate"] - win_rate) > 0.03:
+                if win_rate is not None and abs(calib["win_rate"] - win_rate) > 0.03:
                     arah = "lebih rendah" if calib["win_rate"] < win_rate else "lebih tinggi"
                     st.warning(
                         f"⚠️ Win rate yang Anda pakai sekarang ({win_rate*100:.0f}%) "

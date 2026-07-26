@@ -5,6 +5,8 @@ data pasar -> teknikal -> sentimen -> fundamental -> master score -> risk plan.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from datetime import datetime, timezone
 
 from services import cache, fundamental_engine, market_data, risk_engine, scoring_engine, sentiment_engine
@@ -21,7 +23,7 @@ def analyze_ticker(
     total_capital: float = 100_000_000,
     max_risk_pct: float = 0.02,
     atr_multiplier: float = 2.0,
-    win_rate: float = 0.55,
+    win_rate: Optional[float] = None,
     reward_risk_ratio: float = 2.0,
     period: str = "1y",
     use_rag: bool = True,

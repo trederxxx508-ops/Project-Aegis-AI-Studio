@@ -7,6 +7,8 @@ mengurutkan hasilnya berdasarkan skor akhir, dan menandai kandidat terbaik.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional
+
 from datetime import datetime, timezone
 
 from services import market_data
@@ -41,7 +43,7 @@ def scan_watchlist(
     total_capital: float = 100_000_000,
     max_risk_pct: float = 0.02,
     atr_multiplier: float = 2.0,
-    win_rate: float = 0.55,
+    win_rate: Optional[float] = None,
     reward_risk_ratio: float = 2.0,
     period: str = "1y",
     min_score: float = 0.0,

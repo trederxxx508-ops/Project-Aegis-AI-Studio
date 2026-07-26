@@ -312,6 +312,34 @@ sampel sekecil itu tidak layak jadi dasar ukuran posisi.
    - Saham IDX: **lot bulat** (1 lot = 100 lembar), mata uang IDR
    - Emas: **troy ounce pecahan** (mis. 1,3839 oz), mata uang USD
 
+### Dua penyimpangan sadar dari rumus mentah blueprint
+
+**1. Batas risiko benar-benar menjadi batas.** Rumus blueprint mengalikan ukuran posisi
+dengan `(1 + f*)` **setelah** batas risiko dihitung, sehingga risiko sebenarnya melampaui
+angka yang diminta pengguna:
+
+```
+Diminta  : risiko maksimal 2,00%  =  Rp 2.000.000
+Kenyataan: risiko             2,16%  =  Rp 2.160.000   ← melampaui 8%
+```
+
+Parameter bernama "risiko maksimal" tidak boleh dilampaui, jadi `cap_at_max_risk=True`
+menjadi perilaku bawaan. Perilaku blueprint asli tetap tersedia lewat
+`cap_at_max_risk=False`. Apa pun pilihannya, `actual_risk_pct` dan `within_risk_budget`
+selalu dilaporkan — angkanya tidak pernah disembunyikan.
+
+**2. Kelly tidak berjalan di atas tebakan.** `win_rate` bawaannya `None` → Kelly tidak
+diterapkan sama sekali. Membesarkan posisi hanya sah bila keunggulan sudah **diukur**,
+dan uji mundur menunjukkan keunggulan pemilihan waktu masuk **belum terbukti**. Isi
+`win_rate` hanya dengan hasil `/backtest`.
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Ukuran posisi | 432 lot | **400 lot** |
+| Kerugian maksimal | Rp 2.160.000 | **Rp 2.000.000** |
+| Risiko nyata | 2,16% (melampaui) | **2,00% (sesuai)** |
+| Dasar Kelly | tebakan 55% | tidak dipakai sampai terukur |
+
 ## ✅ Testing
 
 Test suite berjalan **offline** — yfinance/OpenAI di-mock, indikator diuji dengan data sintetis deterministik:

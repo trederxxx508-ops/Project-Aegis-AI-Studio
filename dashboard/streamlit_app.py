@@ -418,6 +418,32 @@ with tab_gold:
             f"Waktu setempat: {status['local_time_jakarta']}"
         )
 
+        # --- Kesehatan hubungan makro: apakah modelnya sedang berlaku? ---
+        health = g.get("macro_relationship") or {}
+        if health:
+            hstat = health.get("status")
+            w = health.get("weights", {})
+            bobot_txt = (
+                f"Bobot menyesuaikan → makro {w.get('macro', 0):.0%} · "
+                f"teknikal {w.get('technical', 0):.0%} · sentimen {w.get('sentiment', 0):.0%}"
+            )
+            corr = health.get("correlation")
+            angka = (
+                f"Korelasi 6 bulan **{corr:+.2f}** (pola jangka panjang "
+                f"{health.get('baseline_correlation'):+.2f})"
+                if corr is not None else "Korelasi tidak dapat diukur"
+            )
+            pesan = f"**{health.get('label')}** — {angka}  \n{health.get('explanation','')}  \n\n{bobot_txt}"
+
+            if hstat == "putus":
+                st.error("🚨 " + pesan)
+            elif hstat == "melemah":
+                st.warning("⚠️ " + pesan)
+            elif hstat == "normal":
+                st.success("✅ " + pesan)
+            else:
+                st.warning("❓ " + pesan)
+
         for w in g.get("warnings", []):
             st.warning(f"⚠️ {w}")
 

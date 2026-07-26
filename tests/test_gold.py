@@ -335,12 +335,54 @@ def test_analyze_gold_uses_macro_weighting(gold_pipeline):
 
     assert result["asset"] == "GOLD"
     assert result["currency"] == "USD"
-    assert set(result["scores"]["weights"]) == {"macro", "technical", "sentiment"}
-    assert result["scores"]["weights"]["macro"] == 0.5
+    weights = result["scores"]["weights"]
+    assert set(weights) == {"macro", "technical", "sentiment"}
+    assert sum(weights.values()) == pytest.approx(1.0)
+
+    # Bobot mengikuti kesehatan hubungan makro, bukan angka tetap
+    assert weights == result["macro_relationship"]["weights"]
 
     comps = result["scores"]["components"]
-    expected = round(72.0 * 0.5 + comps["technical"] * 0.3 + 60.0 * 0.2, 2)
+    expected = round(
+        72.0 * weights["macro"]
+        + comps["technical"] * weights["technical"]
+        + 60.0 * weights["sentiment"],
+        2,
+    )
     assert result["total_score"] == pytest.approx(expected, abs=0.01)
+
+
+def test_gold_reduces_macro_weight_when_relationship_breaks(monkeypatch, gold_pipeline):
+    """Saat emas tak lagi mengikuti suku bunga riil, makro tidak boleh dominan."""
+    monkeypatch.setattr(
+        gold.regime, "relationship_health",
+        lambda closes, use_cache=True: {
+            "status": "putus", "label": "Hubungan makro PUTUS",
+            "correlation": 0.31, "baseline_correlation": -0.44,
+            "weights": gold.regime.WEIGHTS_BY_STATUS["putus"],
+            "explanation": "Emas sedang tidak mengikuti suku bunga riil.",
+        },
+    )
+    result = gold.analyze_gold(use_cache=False)
+
+    assert result["scores"]["weights"]["macro"] == 0.20
+    assert result["scores"]["weights"]["technical"] == 0.50
+    assert any("TIDAK mengikuti suku bunga riil" in w for w in result["warnings"])
+
+
+def test_gold_warns_when_relationship_only_weakens(monkeypatch, gold_pipeline):
+    monkeypatch.setattr(
+        gold.regime, "relationship_health",
+        lambda closes, use_cache=True: {
+            "status": "melemah", "label": "Hubungan makro MELEMAH",
+            "correlation": -0.08, "baseline_correlation": -0.44,
+            "weights": gold.regime.WEIGHTS_BY_STATUS["melemah"],
+            "explanation": "Hubungan sedang melemah.",
+        },
+    )
+    result = gold.analyze_gold(use_cache=False)
+    assert result["scores"]["weights"]["macro"] == 0.35
+    assert any("melemah" in w.lower() for w in result["warnings"])
 
     rp = result["risk_plan"]
     assert rp["unit_name"] == "troy ounce"

@@ -16,5 +16,6 @@ Modul emas & makro:
 - gold              : pipeline emas (Makro x0,5 + Teknikal x0,3 + Sentimen x0,2)
 - gold_sentiment    : kamus sentimen khusus emas (polaritas berbeda dari saham)
 - market_hours      : status buka/tutup pasar + kesegaran harga
+- regime            : deteksi saat hubungan makro-emas berhenti berlaku
 - backtest          : uji mundur bebas lookahead + kalibrasi win rate terukur
 """

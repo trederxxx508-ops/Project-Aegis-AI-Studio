@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from services import backtest, cache, gold, macro_engine, market_data, scanner
+from services import backtest, cache, gold, macro_engine, market_data, regime, scanner
 from services.analysis import analyze_ticker
 from services.rag_engine import rag_engine
 
@@ -273,6 +273,21 @@ async def get_macro(use_cache: bool = True) -> dict:
         return macro_engine.macro_score(use_cache=use_cache)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Gagal mengambil data makro: {exc}")
+
+
+@app.get("/regime", summary="Apakah Hubungan Makro-Emas Sedang Berlaku?")
+async def get_regime(use_cache: bool = True) -> dict:
+    """Ukur apakah emas masih mengikuti suku bunga riil seperti biasanya.
+
+    Bila hubungannya sedang putus, bobot skor makro diturunkan otomatis dan
+    hal itu dinyatakan terang-terangan pada hasil analisis emas.
+    """
+    try:
+        df, _ = gold.fetch_gold_prices(use_cache=use_cache)
+        closes = {idx.date(): float(val) for idx, val in df["Close"].dropna().items()}
+        return regime.relationship_health(closes, use_cache=use_cache)
+    except ConnectionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.post("/analyze-gold", summary="Analisis Emas: Makro + Teknikal + Sentimen + Posisi")

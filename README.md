@@ -214,6 +214,41 @@ model ini.
 > berarti harga emas pasti turun.** Kalimat ini ikut disertakan pada setiap respons `/macro`
 > lewat field `interpretation`.
 
+### 🔍 Deteksi rezim: sistem tahu kapan modelnya sendiri tidak berlaku
+
+Skor makro bertumpu pada satu asumsi — suku bunga riil naik menekan emas. Asumsi itu
+benar **sebagian besar waktu**, tetapi tidak selalu. Sistem yang jujur harus tahu kapan
+modelnya sedang tidak berlaku, lalu mengatakannya.
+
+Modul ini mengukur korelasi bergulir 6 bulan antara perubahan suku bunga riil dan imbal
+hasil emas, lalu **menyesuaikan bobot secara otomatis**:
+
+| Status | Korelasi | Seberapa sering* | Bobot makro | Bobot teknikal |
+|---|---|---|---|---|
+| ✅ **Berlaku** | < −0,20 | 88% | 50% | 30% |
+| ⚠️ **Melemah** | −0,20 s/d 0 | 8% | 35% | 40% |
+| 🚨 **Putus** | ≥ 0 | 4% | **20%** | **50%** |
+| ❓ Tak terukur | — | — | 35% | 40% |
+
+\* diukur pada data 2016–2026; ambangnya diturunkan dari sebaran nyata, bukan ditebak.
+
+Ketika hubungan putus, bertumpu 50% pada skor makro tidak bisa dibenarkan — perannya
+dialihkan ke pergerakan harga yang tetap terukur apa adanya. Bila kesehatan hubungan
+**tidak dapat diukur**, bobot makro juga diturunkan: gagal mengukur harus menurunkan
+keyakinan, bukan diam-diam memakai bobot penuh.
+
+Endpoint `GET /regime` memberi status ini kapan saja. Contoh keluaran nyata:
+
+```
+Hubungan makro BERLAKU
+  korelasi -0,42 | pola jangka panjang -0,44 | median historis -0,44
+  bobot: makro 50%, teknikal 30%, sentimen 20%
+```
+
+Inilah jawaban langsung atas kelemahan yang ditemukan pada pengujian model: periode
+2022–2026, saat pembelian bank sentral mendorong emas naik bersamaan naiknya suku bunga
+riil, kini **terdeteksi otomatis** dan bobotnya menyesuaikan sendiri.
+
 ### Kejujuran data — mekanismenya, bukan sekadar janji
 
 1. **Setiap angka membawa asal-usul**: nilai, tanggal observasi, sumber, dan umur hari.

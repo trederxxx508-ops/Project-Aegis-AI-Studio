@@ -20,7 +20,9 @@ from typing import Optional
 
 import pandas as pd
 
-from services import cache, macro_engine, market_data, market_hours, risk_engine, scoring_engine
+from services import (
+    cache, macro_engine, market_data, market_hours, regime, risk_engine, scoring_engine,
+)
 from services.gold_sentiment import gold_sentiment
 
 # Urutan sumber harga; yang pertama berhasil dipakai.
@@ -156,13 +158,19 @@ def analyze_gold(
     # 4. Sentimen khusus emas
     sentiment = gold_sentiment(extra_headlines=extra_headlines)
 
-    # 5. Skor akhir — bobot sama seperti saham, mesin fundamental diganti makro
+    # 5. Kesehatan hubungan makro — bobot menyesuaikan.
+    # Bila emas sedang tidak mengikuti suku bunga riil, bertumpu 50% pada skor
+    # makro tidak bisa dibenarkan; perannya dialihkan ke pergerakan harga.
+    gold_closes = {idx.date(): float(val) for idx, val in df["Close"].dropna().items()}
+    health = regime.relationship_health(gold_closes, use_cache=use_cache)
+    weights = health["weights"]
+
     components = {
         "macro": max(0.0, min(100.0, macro["score"])),
         "technical": max(0.0, min(100.0, technical["score"])),
         "sentiment": max(0.0, min(100.0, sentiment["score"])),
     }
-    total_score = round(sum(components[k] * WEIGHTS[k] for k in WEIGHTS), 2)
+    total_score = round(sum(components[k] * weights[k] for k in weights), 2)
     signal = scoring_engine.classify_signal(total_score)
 
     # 6. Rencana risiko dalam troy ounce (boleh pecahan)
@@ -190,6 +198,17 @@ def analyze_gold(
         )
     if not market_status["is_open"]:
         warnings.append(f"Pasar emas sedang tutup. {market_status['reason']}")
+    if health["status"] == "putus":
+        warnings.append(
+            "Emas sedang TIDAK mengikuti suku bunga riil (hubungan makro putus). "
+            f"Bobot skor makro diturunkan ke {weights['macro']:.0%}. {health['explanation']}"
+        )
+    elif health["status"] == "melemah":
+        warnings.append(
+            f"Hubungan makro melemah — bobot skor makro diturunkan ke {weights['macro']:.0%}."
+        )
+    elif health["status"] == "tidak_diketahui":
+        warnings.append(health["explanation"])
     if macro["completeness_pct"] < 100:
         warnings.append(
             f"Skor makro parsial — hanya {macro['components_available']} dari "
@@ -206,7 +225,8 @@ def analyze_gold(
         "analyzed_at": datetime.now(timezone.utc).isoformat(),
         "signal": signal,
         "total_score": total_score,
-        "scores": {"components": components, "weights": WEIGHTS},
+        "scores": {"components": components, "weights": weights},
+        "macro_relationship": health,
         "price_source": {
             "symbol": source["symbol"],
             "label": source["label"],

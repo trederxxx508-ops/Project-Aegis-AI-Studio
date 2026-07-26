@@ -17,7 +17,7 @@ def test_known_values_match_blueprint_formula():
     )
     assert result["stop_loss_price"] == 950.0
     assert result["risk_per_share"] == 50.0
-    assert result["max_risk_amount_idr"] == 2_000_000.0
+    assert result["max_risk_amount"] == 2_000_000.0
 
     # Base shares = 2_000_000 / 50 = 40_000
     # Kelly f = (0.55*2 - 0.45)/2 = 0.325 -> fractional = 0.08125
@@ -25,8 +25,8 @@ def test_known_values_match_blueprint_formula():
     assert result["kelly_fraction"] == pytest.approx(0.0813, abs=1e-4)
     assert result["recommended_lots"] == 432
     assert result["recommended_shares"] == 43_200
-    assert result["total_allocation_idr"] == 43_200 * 1000
-    assert result["max_potential_loss_idr"] == 43_200 * 50
+    assert result["total_allocation"] == 43_200 * 1000
+    assert result["max_potential_loss"] == 43_200 * 50
     assert result["take_profit_price"] == 1100.0
     assert result["warnings"] == []
 
@@ -54,7 +54,7 @@ def test_allocation_capped_at_total_capital():
         atr_value=5.0,
         atr_multiplier=1.0,
     )
-    assert result["total_allocation_idr"] <= 10_000_000
+    assert result["total_allocation"] <= 10_000_000
     assert result["portfolio_exposure_pct"] <= 100.0
     assert any("modal" in w.lower() for w in result["warnings"])
 
@@ -79,7 +79,7 @@ def test_zero_lots_when_capital_too_small():
         atr_value=200.0,
     )
     assert result["recommended_lots"] == 0
-    assert result["total_allocation_idr"] == 0
+    assert result["total_allocation"] == 0
 
 
 @pytest.mark.parametrize(

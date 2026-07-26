@@ -21,8 +21,18 @@ def calculate_position_size(
     atr_multiplier: float = 2.0,
     win_rate: float = 0.55,
     reward_risk_ratio: float = 2.0,
+    unit_size: int = SHARES_PER_LOT,
+    allow_fractional: bool = False,
+    unit_name: str = "lot",
+    currency: str = "IDR",
 ) -> dict:
-    """Hitung stop loss ATR, jumlah lot aman, dan eksposur portofolio.
+    """Hitung stop loss ATR, ukuran posisi aman, dan eksposur portofolio.
+
+    Satuan posisi dapat disesuaikan per pasar:
+
+    - Saham Indonesia : ``unit_size=100`` (1 lot = 100 lembar), bulat
+    - Emas / komoditas: ``unit_size=1``, ``allow_fractional=True``
+      (troy ounce boleh pecahan, mis. 2,15 oz)
 
     Raises:
         ValueError: jika input di luar rentang valid.
@@ -41,6 +51,8 @@ def calculate_position_size(
         raise ValueError("win_rate harus di antara 0 dan 1")
     if reward_risk_ratio <= 0:
         raise ValueError("reward_risk_ratio harus > 0")
+    if unit_size <= 0:
+        raise ValueError("unit_size harus > 0")
 
     warnings: list[str] = []
 
@@ -66,11 +78,13 @@ def calculate_position_size(
     fractional_kelly = max(0.0, kelly_f * KELLY_SAFETY_FACTOR)
     adjusted_shares = shares_to_buy * (1 + fractional_kelly)
 
-    # Konversi ke lot (1 lot = 100 lembar)
-    lots_to_buy = int(adjusted_shares // SHARES_PER_LOT)
+    # Konversi ke satuan perdagangan pasar terkait
+    raw_units = adjusted_shares / unit_size
+    lots_to_buy = round(raw_units, 4) if allow_fractional else int(raw_units)
 
     # Guard: alokasi tidak boleh melebihi total modal
-    max_affordable_lots = int(total_capital // (SHARES_PER_LOT * entry_price))
+    max_affordable = total_capital / (unit_size * entry_price)
+    max_affordable_lots = round(max_affordable, 4) if allow_fractional else int(max_affordable)
     if lots_to_buy > max_affordable_lots:
         lots_to_buy = max_affordable_lots
         warnings.append(
@@ -79,25 +93,31 @@ def calculate_position_size(
         )
     if lots_to_buy <= 0:
         warnings.append(
-            "Modal/toleransi risiko terlalu kecil untuk membeli 1 lot pada "
+            f"Modal/toleransi risiko terlalu kecil untuk membeli 1 {unit_name} pada "
             "harga dan volatilitas saat ini."
         )
         lots_to_buy = 0
 
-    shares_final = lots_to_buy * SHARES_PER_LOT
+    shares_final = round(lots_to_buy * unit_size, 4)
     total_allocation = shares_final * entry_price
 
+    # Nama field sengaja netral mata uang: modul emas memakai USD, saham IDR.
+    # Mata uang sebenarnya dinyatakan eksplisit lewat field ``currency``.
     return {
         "entry_price": entry_price,
         "stop_loss_price": round(stop_loss, 2),
         "risk_per_share": round(risk_per_share, 2),
-        "max_risk_amount_idr": round(max_risk_amount, 2),
+        "max_risk_amount": round(max_risk_amount, 2),
         "kelly_fraction": round(fractional_kelly, 4),
-        "recommended_lots": lots_to_buy,
+        "recommended_units": lots_to_buy,
+        "recommended_lots": lots_to_buy,  # nama lama, dipertahankan untuk saham
         "recommended_shares": shares_final,
-        "total_allocation_idr": round(total_allocation, 2),
-        "max_potential_loss_idr": round(shares_final * risk_per_share, 2),
+        "total_allocation": round(total_allocation, 2),
+        "max_potential_loss": round(shares_final * risk_per_share, 2),
         "portfolio_exposure_pct": round((total_allocation / total_capital) * 100, 2),
         "take_profit_price": round(entry_price + reward_risk_ratio * risk_per_share, 2),
+        "unit_name": unit_name,
+        "unit_size": unit_size,
+        "currency": currency,
         "warnings": warnings,
     }

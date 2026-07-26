@@ -104,6 +104,8 @@ OPENAI_API_KEY=sk-... docker compose up --build
 | `POST` | `/analyze-stock` | Analisis lengkap satu saham: skor per engine, sinyal, rekomendasi lot |
 | `POST` | `/upload-pdf` | Upload & ingest laporan keuangan PDF ke Vector DB |
 | `POST` | `/query` | Tanya jawab atas laporan yang ter-ingest (jawaban + sumber kutipan) |
+| `GET` | `/macro` | Kondisi makro ekonomi + asal-usul & kesegaran tiap indikator |
+| `POST` | `/analyze-gold` | **Analisis emas**: makro + teknikal + sentimen + ukuran posisi (USD/oz) |
 | `POST` | `/cache/clear` | Kosongkan cache data pasar (paksa ambil data terbaru) |
 
 ### Contoh `/scan` — pemindai otomatis
@@ -140,12 +142,80 @@ Respons berisi: `signal`, `total_score`, skor per engine (`fundamental` / `techn
 
 > Ticker Bursa Efek Indonesia memakai sufiks `.JK` (mis. `BBCA.JK`, `TLKM.JK`).
 
+## 🥇 Modul Emas & Makro Ekonomi
+
+Emas tidak punya laba, utang, atau laporan keuangan — sehingga mesin fundamental tidak
+berlaku. Penggantinya adalah **Skor Makro**:
+
+> Saham: `Fundamental×0,5 + Teknikal×0,3 + Sentimen×0,2`
+> **Emas: `Makro×0,5 + Teknikal×0,3 + Sentimen×0,2`**
+
+### Inflasi tidak perlu menunggu sebulan
+
+Data CPI resmi memang terbit bulanan, tetapi pasar obligasi AS **memberi harga pada
+inflasi setiap hari kerja**. Modul ini memakai dua seri harian tersebut, sehingga skor
+makro ikut bergerak setiap hari — bukan sebulan sekali:
+
+| Faktor | Bobot | Seri FRED | Frekuensi | Logika |
+|---|---|---|---|---|
+| Suku bunga riil 10 thn | 40 | `DFII10` | **Harian** | Riil negatif → uang tunai rugi → emas menarik |
+| Indeks dolar | 25 | `DTWEXBGS` | Harian | Emas dihargai dalam dolar → berlawanan arah |
+| Ekspektasi inflasi | 20 | `T10YIE` | **Harian** | Inflasi diperkirakan naik → emas sebagai lindung nilai |
+| Imbal hasil obligasi | 15 | `DGS10` | Harian | Obligasi pesaing emas → yield naik menekan emas |
+
+Konteks tambahan yang ditampilkan: suku bunga acuan The Fed (`DFF`) dan inflasi CPI
+tahunan (`CPIAUCSL`) lengkap dengan tanggal terbitnya.
+
+**Tidak memerlukan kunci API.** Data diambil lewat endpoint CSV publik FRED. Bila FRED
+tidak terjangkau, tersedia proksi Yahoo Finance untuk sebagian indikator.
+
+### Kejujuran data — mekanismenya, bukan sekadar janji
+
+1. **Setiap angka membawa asal-usul**: nilai, tanggal observasi, sumber, dan umur hari.
+   Bisa Anda periksa sendiri di `fred.stlouisfed.org` — angkanya harus sama persis.
+2. **Gagal ambil = dinyatakan tidak tersedia**, komponennya diberi nilai netral, tidak
+   pernah ditebak lalu disajikan seolah pasti.
+3. **`completeness_pct`** memberi tahu berapa persen komponen yang benar-benar berhasil
+   diambil, sehingga Anda tahu seberapa utuh skornya.
+4. **Data basi ditandai** bila umurnya melewati batas wajar seri tersebut.
+5. **Model bahasa (LLM) tidak menyentuh angka apa pun** di modul ini — seluruhnya data
+   resmi + rumus deterministik.
+
+### Sumber harga emas — apa adanya
+
+Spot XAU/USD **tidak tersedia gratis** pada penyedia data publik (`XAUUSD=X` mengembalikan
+404). Yang dipakai berurutan:
+
+| Prioritas | Simbol | Keterangan |
+|---|---|---|
+| 1 | `GC=F` | Emas berjangka COMEX — bergerak sangat dekat dengan spot, **per troy ounce** |
+| 2 | `GLD` | ETF SPDR — harga per unit ETF, **BUKAN per ounce** (ditandai jelas di hasil) |
+| 3 | `IAU` | ETF iShares — sama, ditandai jelas |
+
+Sumber yang benar-benar terpakai selalu dicantumkan; bila yang terpakai adalah ETF,
+peringatan eksplisit muncul bahwa angkanya bukan harga per troy ounce.
+
+### Sentimen emas berlawanan arah dengan saham
+
+Kamus sentimen saham tidak bisa dipakai — bahkan sering terbalik artinya. Bagi saham
+"resesi" adalah kabar buruk; bagi emas justru mendorong harga naik. Karena itu modul ini
+memakai kamus tersendiri (perang, krisis, safe haven, pangkas suku bunga, bank sentral
+borong emas → naik; pengetatan, dolar menguat, selera risiko → turun).
+
+### Jam pasar & kesegaran harga
+
+Emas berdagang hampir 24 jam (Minggu 18:00 – Jumat 17:00 waktu New York, dengan jeda
+harian). Bila pasar tutup, sistem **menyatakannya terang-terangan** beserta umur harga
+terakhir — bukan menampilkan harga penutupan seolah harga sedang berjalan.
+
 ## 🧮 Formula Risk Engine (Section 5 Blueprint)
 
 1. **Stop loss berbasis volatilitas** — `SL = Entry − (k × ATR)`, k = 1.5–2.0
 2. **Risk-based position sizing** — `Lembar = (Modal × Risiko%) ÷ (Entry − SL)`
 3. **Fractional Kelly** — `f* = c × ((W·R − (1−W)) ÷ R)`, c = 0.25, di-clamp ≥ 0
-4. Konversi ke **lot IDX** (1 lot = 100 lembar), dibatasi maksimal 100% modal
+4. Konversi ke satuan pasar, dibatasi maksimal 100% modal:
+   - Saham IDX: **lot bulat** (1 lot = 100 lembar), mata uang IDR
+   - Emas: **troy ounce pecahan** (mis. 1,3839 oz), mata uang USD
 
 ## ✅ Testing
 

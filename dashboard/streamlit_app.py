@@ -78,8 +78,9 @@ risk_params = {
     "reward_risk_ratio": reward_risk,
 }
 
-tab_scan, tab_single, tab_upload, tab_qa = st.tabs(
-    ["🔎 Pemindai Otomatis", "📈 Analisis 1 Saham", "📄 Upload Laporan", "💬 Tanya Laporan"]
+tab_scan, tab_single, tab_gold, tab_upload, tab_qa = st.tabs(
+    ["🔎 Pemindai Otomatis", "📈 Analisis 1 Saham", "🥇 Emas & Makro",
+     "📄 Upload Laporan", "💬 Tanya Laporan"]
 )
 
 
@@ -175,13 +176,13 @@ with tab_scan:
             tampil = df[[
                 "rank", "ticker", "signal", "total_score", "fundamental", "technical",
                 "sentiment", "price", "rsi_14", "stop_loss", "take_profit",
-                "lots", "allocation_idr", "max_loss_idr", "exposure_pct",
+                "lots", "allocation", "max_loss", "exposure_pct",
             ]].rename(columns={
                 "rank": "#", "ticker": "Saham", "signal": "Sinyal", "total_score": "Skor",
                 "fundamental": "Fund", "technical": "Tek", "sentiment": "Sent",
                 "price": "Harga", "rsi_14": "RSI", "stop_loss": "Stop Loss",
-                "take_profit": "Take Profit", "lots": "Lot", "allocation_idr": "Alokasi (Rp)",
-                "max_loss_idr": "Maks Rugi (Rp)", "exposure_pct": "Eksposur %",
+                "take_profit": "Take Profit", "lots": "Lot", "allocation": "Alokasi (Rp)",
+                "max_loss": "Maks Rugi (Rp)", "exposure_pct": "Eksposur %",
             })
             st.dataframe(
                 tampil,
@@ -204,7 +205,7 @@ with tab_scan:
                 f"**{best['ticker']}** memimpin dengan skor {best['total_score']:.1f} "
                 f"({best['signal']}). Rencana: masuk di {best['price']:,.0f}, "
                 f"stop loss {best['stop_loss']:,.0f}, target {best['take_profit']:,.0f}, "
-                f"ukuran {best['lots']} lot — risiko maksimal Rp {best['max_loss_idr']:,.0f}."
+                f"ukuran {best['lots']} lot — risiko maksimal Rp {best['max_loss']:,.0f}."
             )
 
             st.download_button(
@@ -289,8 +290,8 @@ with tab_single:
                                   "Total alokasi", "Maks. rugi", "Eksposur portofolio"],
                     "Nilai": [f"{rp['entry_price']:,.0f}", f"{rp['stop_loss_price']:,.0f}",
                               f"{rp['take_profit_price']:,.0f}", f"{rp['recommended_lots']} lot",
-                              f"Rp {rp['total_allocation_idr']:,.0f}",
-                              f"Rp {rp['max_potential_loss_idr']:,.0f}",
+                              f"Rp {rp['total_allocation']:,.0f}",
+                              f"Rp {rp['max_potential_loss']:,.0f}",
                               f"{rp['portfolio_exposure_pct']:.2f} %"],
                 }),
                 hide_index=True, use_container_width=True,
@@ -308,7 +309,146 @@ with tab_single:
 
 
 # ---------------------------------------------------------------------------
-# TAB 3 — Upload laporan keuangan
+# TAB 3 — Emas & makro ekonomi
+# ---------------------------------------------------------------------------
+with tab_gold:
+    st.subheader("Emas (XAU) — digerakkan makro ekonomi, bukan laporan keuangan")
+    st.caption(
+        "Emas tidak punya laba atau utang, sehingga mesin fundamental diganti "
+        "**Skor Makro**: suku bunga riil, kekuatan dolar, ekspektasi inflasi, dan imbal hasil obligasi."
+    )
+
+    gcol1, gcol2 = st.columns([2, 1])
+    with gcol1:
+        gold_capital = st.number_input(
+            "Modal untuk emas (USD)", min_value=100.0, value=10_000.0, step=500.0,
+            help="Harga emas dihitung dalam dolar AS, jadi modalnya juga dalam USD.",
+        )
+    with gcol2:
+        st.write("")
+        st.write("")
+        run_gold = st.button("🥇 Analisis Emas", type="primary",
+                             use_container_width=True, disabled=not api_ok)
+
+    gold_news = st.text_area(
+        "Berita emas tambahan (opsional, satu judul per baris)",
+        placeholder="Contoh: Bank sentral China kembali menambah cadangan emas",
+        help="Untuk emas, berita krisis/perang justru mendorong harga NAIK.",
+    )
+
+    if run_gold:
+        with st.spinner("Mengambil harga emas dan data makro…"):
+            try:
+                extra = [h.strip() for h in gold_news.split("\n") if h.strip()]
+                resp = requests.post(
+                    f"{api_url}/analyze-gold",
+                    json={
+                        "total_capital": gold_capital,
+                        "max_risk_pct": max_risk_pct,
+                        "atr_multiplier": atr_multiplier,
+                        "win_rate": win_rate,
+                        "reward_risk_ratio": reward_risk,
+                        "extra_headlines": extra or None,
+                    },
+                    timeout=300,
+                )
+                if resp.ok:
+                    st.session_state["gold"] = resp.json()
+                elif resp.status_code == 429:
+                    st.warning("⏳ Penyedia data membatasi permintaan. Tunggu sebentar lalu ulangi.")
+                else:
+                    st.error(_detail(resp))
+            except requests.Timeout:
+                st.error("Waktu tunggu habis saat mengambil data emas.")
+            except Exception as exc:
+                st.error(f"Gagal menghubungi backend: {exc}")
+
+    g = st.session_state.get("gold")
+    if g:
+        ind = g["technical"]["indicators"]
+        comps = g["scores"]["components"]
+        status = g["market_status"]
+
+        st.markdown(
+            f"## {SIGNAL_ICON.get(g['signal'], '⚪')} {g['signal']} — "
+            f"skor **{g['total_score']:.1f} / 100**"
+        )
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(f"Harga ({g['quote_unit']})", f"${ind['last_price']:,.2f}")
+        m2.metric("Makro (50%)", f"{comps['macro']:.1f}")
+        m3.metric("Teknikal (30%)", f"{comps['technical']:.1f}")
+        m4.metric("Sentimen (20%)", f"{comps['sentiment']:.1f}",
+                  g["sentiment"].get("label", ""))
+
+        buka = "🟢 BUKA" if status["is_open"] else "🔴 TUTUP"
+        st.info(
+            f"**Pasar {buka}** — {status['reason']}  \n"
+            f"Sumber harga: {g['price_source']['label']} · {g['price_freshness']['description']}  \n"
+            f"Waktu setempat: {status['local_time_jakarta']}"
+        )
+
+        for w in g.get("warnings", []):
+            st.warning(f"⚠️ {w}")
+
+        # --- Rincian skor makro ---
+        macro = g["macro"]
+        st.markdown(
+            f"### 🌍 Skor Makro {macro['score']:.1f}/100 "
+            f"· kelengkapan data {macro['completeness_pct']}%"
+        )
+        if macro.get("breakdown"):
+            macro_rows = [
+                {
+                    "Faktor": v["label"],
+                    "Angka": v["reading"],
+                    "Poin": f"{v['points']}/{v['max_points']}",
+                    "Tafsiran": v["interpretation"],
+                    "Per tanggal": v["as_of"],
+                    "Sumber": v["source"],
+                }
+                for v in macro["breakdown"].values()
+            ]
+            st.dataframe(pd.DataFrame(macro_rows), hide_index=True, use_container_width=True)
+
+        ctx = macro.get("context", {})
+        if ctx:
+            c1, c2 = st.columns(2)
+            fed = ctx.get("fed_funds_rate", {})
+            cpi = ctx.get("cpi", {})
+            if fed.get("value") is not None:
+                c1.metric("Suku bunga The Fed", f"{fed['value']:.2f}%",
+                          help=f"Per {fed.get('as_of')} · {fed.get('source')}")
+            if cpi.get("yoy_pct") is not None:
+                c2.metric("Inflasi AS (tahunan)", f"{cpi['yoy_pct']:.2f}%",
+                          help=f"Per {cpi.get('as_of')} · {cpi.get('source')}")
+
+        # --- Rencana posisi ---
+        st.markdown("### 🛡️ Rencana Posisi")
+        rp = g["risk_plan"]
+        st.dataframe(
+            pd.DataFrame({
+                "Parameter": ["Harga masuk", "Stop loss", "Take profit",
+                              f"Ukuran ({rp['unit_name']})", "Total alokasi",
+                              "Maks. rugi", "Eksposur portofolio"],
+                "Nilai": [f"${rp['entry_price']:,.2f}", f"${rp['stop_loss_price']:,.2f}",
+                          f"${rp['take_profit_price']:,.2f}", f"{rp['recommended_units']}",
+                          f"${rp['total_allocation']:,.2f}",
+                          f"${rp['max_potential_loss']:,.2f}",
+                          f"{rp['portfolio_exposure_pct']:.2f}%"],
+            }),
+            hide_index=True, use_container_width=True,
+        )
+        for w in rp.get("warnings", []):
+            st.warning(w)
+
+        if g["sentiment"].get("details"):
+            with st.expander("📰 Berita yang dinilai (untuk emas, krisis = positif)"):
+                st.dataframe(pd.DataFrame(g["sentiment"]["details"]),
+                             hide_index=True, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# TAB 4 — Upload laporan keuangan
 # ---------------------------------------------------------------------------
 with tab_upload:
     st.subheader("Upload laporan keuangan (PDF)")
@@ -338,7 +478,7 @@ with tab_upload:
 
 
 # ---------------------------------------------------------------------------
-# TAB 4 — Tanya jawab RAG
+# TAB 5 — Tanya jawab RAG
 # ---------------------------------------------------------------------------
 with tab_qa:
     st.subheader("Tanya apa saja tentang laporan yang sudah di-upload")

@@ -131,8 +131,8 @@ def summarize(scan: dict) -> list[dict]:
             "stop_loss": rp["stop_loss_price"],
             "take_profit": rp["take_profit_price"],
             "lots": rp["recommended_lots"],
-            "allocation_idr": rp["total_allocation_idr"],
-            "max_loss_idr": rp["max_potential_loss_idr"],
+            "allocation": rp["total_allocation"],
+            "max_loss": rp["max_potential_loss"],
             "exposure_pct": rp["portfolio_exposure_pct"],
         })
     return rows

@@ -80,7 +80,7 @@ def test_summarize_row_shape(mocked_market):
     assert len(rows) == 1
     for key in (
         "rank", "ticker", "signal", "total_score", "price", "rsi_14",
-        "stop_loss", "take_profit", "lots", "allocation_idr", "exposure_pct",
+        "stop_loss", "take_profit", "lots", "allocation", "exposure_pct",
     ):
         assert key in rows[0]
     assert rows[0]["stop_loss"] < rows[0]["price"] < rows[0]["take_profit"]

@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from services import cache, market_data, scanner
+from services import cache, gold, macro_engine, market_data, scanner
 from services.analysis import analyze_ticker
 from services.rag_engine import rag_engine
 
@@ -79,6 +79,19 @@ class AnalyzeResponse(BaseModel):
     fundamental: dict
     risk_plan: dict
     analyzed_at: Optional[str] = None
+
+
+class GoldRequest(BaseModel):
+    total_capital: float = Field(default=10_000, gt=0, description="Total modal dalam USD")
+    max_risk_pct: float = Field(default=0.02, gt=0, lt=1)
+    atr_multiplier: float = Field(default=2.0, gt=0, le=5)
+    win_rate: float = Field(default=0.55, ge=0, le=1)
+    reward_risk_ratio: float = Field(default=2.0, gt=0)
+    period: str = Field(default="1y")
+    extra_headlines: Optional[list[str]] = Field(
+        default=None, description="Judul berita tambahan untuk ikut dinilai sentimennya"
+    )
+    use_cache: bool = Field(default=True)
 
 
 class ScanRequest(BaseModel):
@@ -232,6 +245,37 @@ async def scan_stocks(request: ScanRequest) -> dict:
 
     result["table"] = scanner.summarize(result)
     return result
+
+
+@app.get("/macro", summary="Kondisi Makro Ekonomi (Pendorong Harga Emas)")
+async def get_macro(use_cache: bool = True) -> dict:
+    """Skor makro 0-100 beserta asal-usul dan kesegaran tiap indikator."""
+    try:
+        return macro_engine.macro_score(use_cache=use_cache)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal mengambil data makro: {exc}")
+
+
+@app.post("/analyze-gold", summary="Analisis Emas: Makro + Teknikal + Sentimen + Posisi")
+async def analyze_gold_endpoint(request: GoldRequest) -> dict:
+    """Analisis emas (USD per troy ounce) memakai Makro×0,5 + Teknikal×0,3 + Sentimen×0,2."""
+    try:
+        return gold.analyze_gold(
+            total_capital=request.total_capital,
+            max_risk_pct=request.max_risk_pct,
+            atr_multiplier=request.atr_multiplier,
+            win_rate=request.win_rate,
+            reward_risk_ratio=request.reward_risk_ratio,
+            period=request.period,
+            extra_headlines=request.extra_headlines,
+            use_cache=request.use_cache,
+        )
+    except market_data.RateLimitedError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    except ConnectionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.post("/cache/clear", summary="Kosongkan Cache Data Pasar")

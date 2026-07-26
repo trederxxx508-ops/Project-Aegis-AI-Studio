@@ -608,12 +608,12 @@ function calculatePositionSize(p) {
     entry_price: p.entry_price,
     stop_loss_price: r2(stopLoss),
     risk_per_share: r2(riskPerShare),
-    max_risk_amount_idr: r2(maxRiskAmount),
+    max_risk_amount: r2(maxRiskAmount),
     kelly_fraction: Math.round(fractionalKelly * 10000) / 10000,
     recommended_lots: lots,
     recommended_shares: shares,
-    total_allocation_idr: r2(alloc),
-    max_potential_loss_idr: r2(shares * riskPerShare),
+    total_allocation: r2(alloc),
+    max_potential_loss: r2(shares * riskPerShare),
     portfolio_exposure_pct: r2(alloc / p.total_capital * 100),
     take_profit_price: r2(p.entry_price + p.reward_risk_ratio * riskPerShare),
     warnings
@@ -943,8 +943,8 @@ function parseCsv(text) {
         ["Take profit (R:R)", fmtIDR.format(risk.take_profit_price)],
         ["Risiko per lembar", fmtIDR.format(risk.risk_per_share)],
         ["Lot direkomendasikan", fmtIDR.format(risk.recommended_lots) + " lot (" + fmtIDR.format(risk.recommended_shares) + " lembar)"],
-        ["Total alokasi", "Rp " + fmtIDR.format(risk.total_allocation_idr)],
-        ["Maks. potensi rugi", "Rp " + fmtIDR.format(risk.max_potential_loss_idr)],
+        ["Total alokasi", "Rp " + fmtIDR.format(risk.total_allocation)],
+        ["Maks. potensi rugi", "Rp " + fmtIDR.format(risk.max_potential_loss)],
         ["Eksposur portofolio", fmtNum.format(risk.portfolio_exposure_pct) + " %"],
         ["Fractional Kelly", fmtNum.format(risk.kelly_fraction)]
       ];

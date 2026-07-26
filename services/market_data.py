@@ -24,6 +24,9 @@ REQUIRED_COLUMNS = ("Open", "High", "Low", "Close", "Volume")
 MAX_FETCH_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = (1.0, 3.0)  # jeda sebelum percobaan ke-2 dan ke-3
 
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+CHART_API_TIMEOUT = 20
+
 
 class RateLimitedError(RuntimeError):
     """Penyedia data menolak permintaan karena terlalu sering (HTTP 429)."""
@@ -32,6 +35,68 @@ class RateLimitedError(RuntimeError):
 def _is_rate_limit(exc: Exception) -> bool:
     text = str(exc).lower()
     return "429" in text or "too many requests" in text or "rate limit" in text
+
+
+def fetch_chart_api(symbol: str, range_: str = "1y", interval: str = "1d") -> pd.DataFrame:
+    """Ambil OHLCV langsung dari endpoint chart Yahoo memakai ``requests``.
+
+    Jalur ini sengaja tidak lewat pustaka yfinance: bila klien HTTP internal
+    yfinance bermasalah di suatu lingkungan (proxy perusahaan, TLS), jalur
+    mandiri ini tetap bisa jalan. Dipakai sebagai cadangan otomatis.
+    """
+    import urllib.parse
+
+    import requests
+
+    url = YAHOO_CHART_URL.format(symbol=urllib.parse.quote(symbol))
+    resp = requests.get(
+        url,
+        params={"range": range_, "interval": interval},
+        timeout=CHART_API_TIMEOUT,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; ProjectAegis/1.0)"},
+    )
+    if resp.status_code == 429:
+        raise RateLimitedError(
+            f"Penyedia data membatasi permintaan saat mengambil '{symbol}'. "
+            "Tunggu sekitar satu menit lalu coba lagi."
+        )
+    resp.raise_for_status()
+
+    payload = resp.json().get("chart", {})
+    if payload.get("error"):
+        raise ValueError(
+            f"Simbol '{symbol}' tidak ditemukan di penyedia data: "
+            f"{payload['error'].get('description', 'tidak diketahui')}"
+        )
+    results = payload.get("result")
+    if not results:
+        raise ValueError(f"Tidak ada data harga untuk simbol '{symbol}'.")
+
+    result = results[0]
+    timestamps = result.get("timestamp") or []
+    quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+    if not timestamps or not quote.get("close"):
+        raise ValueError(f"Tidak ada data harga untuk simbol '{symbol}'.")
+
+    frame = pd.DataFrame(
+        {
+            "Open": quote.get("open"),
+            "High": quote.get("high"),
+            "Low": quote.get("low"),
+            "Close": quote.get("close"),
+            "Volume": quote.get("volume"),
+        },
+        index=pd.to_datetime(timestamps, unit="s", utc=True),
+    ).dropna(subset=["Close"])
+
+    if frame.empty:
+        raise ValueError(f"Tidak ada data harga valid untuk simbol '{symbol}'.")
+
+    # Beberapa simbol (indeks, valas) tidak melaporkan volume
+    frame["Volume"] = frame["Volume"].fillna(0.0)
+    frame[["Open", "High", "Low"]] = frame[["Open", "High", "Low"]].ffill().bfill()
+    frame.attrs["meta"] = result.get("meta", {})
+    return frame
 
 
 def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:

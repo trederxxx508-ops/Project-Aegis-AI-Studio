@@ -10,4 +10,10 @@ Modul:
 - fundamental_engine: skor fundamental (RAG -> yfinance heuristik -> netral)
 - scoring_engine    : Master Scoring Engine (0-100) + sinyal akhir
 - rag_engine        : RAG laporan keuangan (LlamaIndex + Qdrant + OpenAI)
+
+Modul emas & makro:
+- macro_engine      : suku bunga riil, dolar, ekspektasi inflasi, yield (FRED)
+- gold              : pipeline emas (Makro x0,5 + Teknikal x0,3 + Sentimen x0,2)
+- gold_sentiment    : kamus sentimen khusus emas (polaritas berbeda dari saham)
+- market_hours      : status buka/tutup pasar + kesegaran harga
 """

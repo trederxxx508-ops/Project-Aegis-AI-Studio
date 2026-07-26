@@ -1,24 +1,25 @@
-# --- API core ---
+# =====================================================================
+# Komponen INTI — cukup untuk hampir semua fitur:
+# analisis saham, emas, makro ekonomi, uji mundur, riwayat, dashboard.
+#
+# Sengaja dijaga ringan. Komponen berat untuk membaca laporan PDF (RAG)
+# dipisah ke requirements-rag.txt karena bersifat opsional: memaksa
+# memasangnya membuat pemasangan jauh lebih lama dan menambah peluang
+# gagal, padahal fitur utama sama sekali tidak membutuhkannya.
+# =====================================================================
+
+# --- API ---
 fastapi>=0.110
 uvicorn[standard]>=0.29
 pydantic>=2.6
 python-multipart>=0.0.9
 python-dotenv>=1.0
 
-# --- RAG stack (Feature 1) ---
-llama-index-core>=0.10.30
-llama-index-llms-openai>=0.1.16
-llama-index-embeddings-openai>=0.1.7
-llama-index-vector-stores-qdrant>=0.2.8
-llama-index-readers-file>=0.1.19
-qdrant-client>=1.8
-pypdf>=4.0
-
-# --- Market data & math (Feature 2/3) ---
+# --- Data pasar & perhitungan ---
 yfinance>=0.2.37
 pandas>=2.0
 numpy>=1.26
-
-# --- Dashboard (Phase 4) ---
-streamlit>=1.33
 requests>=2.31
+
+# --- Dashboard ---
+streamlit>=1.33

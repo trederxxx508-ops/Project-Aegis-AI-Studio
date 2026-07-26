@@ -42,12 +42,24 @@ class RAGEngine:
                 "sebelum memakai fitur RAG."
             )
 
-        from llama_index.core import Settings, StorageContext
-        from llama_index.core.node_parser import SentenceSplitter
-        from llama_index.embeddings.openai import OpenAIEmbedding
-        from llama_index.llms.openai import OpenAI
-        from llama_index.vector_stores.qdrant import QdrantVectorStore
-        from qdrant_client import QdrantClient
+        # Komponen RAG sengaja opsional agar pemasangan fitur utama tetap
+        # ringan. Bila belum terpasang, pesannya harus langsung memberi tahu
+        # cara memperbaikinya — bukan melempar ImportError yang membingungkan.
+        try:
+            from llama_index.core import Settings, StorageContext
+            from llama_index.core.node_parser import SentenceSplitter
+            from llama_index.embeddings.openai import OpenAIEmbedding
+            from llama_index.llms.openai import OpenAI
+            from llama_index.vector_stores.qdrant import QdrantVectorStore
+            from qdrant_client import QdrantClient
+        except ImportError as exc:
+            raise RuntimeError(
+                "Fitur baca laporan PDF membutuhkan komponen tambahan yang belum "
+                "terpasang. Jalankan:\n\n"
+                "    pip install -r requirements-rag.txt\n\n"
+                "Seluruh fitur lain (saham, emas, makro, uji mundur, riwayat) "
+                f"tetap berjalan normal tanpa ini. Detail: {exc}"
+            ) from exc
 
         Settings.llm = OpenAI(model=DEFAULT_LLM_MODEL, api_key=api_key, temperature=0.1)
         Settings.embed_model = OpenAIEmbedding(model=DEFAULT_EMBED_MODEL, api_key=api_key)
@@ -64,7 +76,7 @@ class RAGEngine:
         """Proses satu PDF ke vector store. Mengembalikan jumlah halaman."""
         self._ensure_initialized()
 
-        from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
+        from llama_index.core import SimpleDirectoryReader, VectorStoreIndex  # noqa: F401
 
         documents = SimpleDirectoryReader(input_files=[file_path]).load_data()
         for doc in documents:

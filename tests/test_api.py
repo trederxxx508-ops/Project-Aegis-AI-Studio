@@ -26,6 +26,33 @@ def test_query_requires_uploaded_pdf():
     assert "Upload PDF" in resp.json()["detail"]
 
 
+def test_missing_rag_components_give_actionable_message(monkeypatch):
+    """Komponen RAG opsional; bila belum ada, pesannya harus memandu."""
+    from services.rag_engine import RAGEngine
+
+    engine = RAGEngine()
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-uji-palsu")
+
+    with pytest.raises(RuntimeError) as exc:
+        engine._ensure_initialized()
+
+    pesan = str(exc.value)
+    assert "requirements-rag.txt" in pesan
+    assert "tetap berjalan normal" in pesan
+
+
+def test_core_features_work_without_rag_components():
+    """Bukti bahwa memisahkan komponen berat aman: fitur inti tetap jalan."""
+    import importlib.util
+
+    assert importlib.util.find_spec("llama_index") is None, (
+        "Uji ini bermakna hanya bila llama_index memang tidak terpasang"
+    )
+    assert client.get("/health").status_code == 200
+    assert client.get("/watchlists").status_code == 200
+
+
 def test_upload_rejects_non_pdf():
     resp = client.post(
         "/upload-pdf",

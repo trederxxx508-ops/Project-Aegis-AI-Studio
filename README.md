@@ -2,11 +2,25 @@
 
 > ## 🚀 Cara tercepat menjalankan (Windows)
 > 1. Pasang **Python** dari [python.org/downloads](https://www.python.org/downloads/) — ✅ centang **"Add Python to PATH"** saat instalasi
-> 2. Klik dua kali **`JALANKAN-WINDOWS.bat`**
-> 3. Tunggu (pertama kali 3–10 menit), dashboard terbuka sendiri di browser
-> 4. Buka tab **🔎 Pemindai Otomatis** → klik **Pindai Sekarang**
+> 2. **Klik KANAN file ZIP → "Extract All"** ⚠️ *(jangan jalankan file dari dalam ZIP)*
+> 3. Buka folder hasil ekstrak → klik dua kali **`JALANKAN-WINDOWS.bat`**
+> 4. Tunggu (pertama kali 3–8 menit), dashboard terbuka sendiri di browser
+> 5. Buka tab **🔎 Pemindai Otomatis** → klik **Pindai Sekarang**
 >
-> macOS / Linux: jalankan `bash jalankan.sh`
+> macOS / Linux: `bash jalankan.sh`
+
+## 🛠️ Bila Gagal Berjalan
+
+| Pesan galat | Penyebab | Cara memperbaiki |
+|---|---|---|
+| `Could not open requirements file` atau `Berkas proyek tidak lengkap` | File `.bat` dijalankan dari **dalam ZIP** — Windows menyalinnya sendirian ke folder sementara | Klik kanan ZIP → **Extract All**, lalu jalankan `.bat` dari folder hasil ekstrak |
+| `Python tidak ditemukan` | Python belum terpasang, atau lupa mencentang "Add Python to PATH" | Pasang ulang Python dan **centang "Add Python to PATH"** |
+| `Python ... terlalu lama` | Versi di bawah 3.10 | Unduh Python terbaru |
+| Pemasangan komponen gagal | Internet terputus, atau versi Python sangat baru sehingga komponen belum tersedia | Periksa koneksi; bila Python 3.14+ bermasalah, pasang Python 3.12 |
+| Fitur PDF memberi pesan `requirements-rag.txt` | Komponen RAG memang opsional dan belum dipasang | `pip install -r requirements-rag.txt` — **fitur lain tetap jalan tanpa ini** |
+
+Peluncur memeriksa semua hal di atas **sebelum** memasang apa pun, sehingga galat muncul
+sebagai panduan yang jelas, bukan pesan teknis yang membingungkan.
 
 AI Stock Copilot & Decision Support System yang menggabungkan **5 sudut pandang analisis pasar saham** secara otomatis, sesuai Master Blueprint:
 
@@ -70,9 +84,22 @@ tests/                        # Pytest suite (offline, sumber eksternal di-mock)
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env          # isi OPENAI_API_KEY untuk fitur RAG
+pip install -r requirements.txt      # inti — cukup untuk hampir semua fitur
+cp .env.example .env
 ```
+
+**Komponen dipisah dengan sengaja.** `requirements.txt` hanya berisi yang ringan dan
+diperlukan untuk analisis saham, emas, makro, uji mundur, riwayat, dan dashboard.
+Komponen berat untuk membaca laporan PDF bersifat opsional:
+
+```bash
+pip install -r requirements-rag.txt   # hanya bila ingin fitur baca PDF
+```
+
+Alasannya sederhana: memaksa semua orang memasang LlamaIndex + Qdrant membuat pemasangan
+jauh lebih lama dan menambah peluang gagal, padahal fitur utama tidak membutuhkannya
+sama sekali. Bila komponen RAG belum ada, endpoint PDF memberi pesan yang memandu —
+bukan gagal dengan galat teknis.
 
 ### 2. Jalankan backend FastAPI
 

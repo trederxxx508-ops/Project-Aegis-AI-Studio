@@ -1,0 +1,22 @@
+# =====================================================================
+# Komponen OPSIONAL — hanya untuk membaca laporan keuangan PDF (RAG).
+#
+# Pasang hanya bila ingin memakai fitur /upload-pdf dan /query:
+#     pip install -r requirements-rag.txt
+#
+# Tanpa berkas ini, SELURUH fitur lain tetap berjalan normal: analisis
+# saham, emas, makro ekonomi, uji mundur, riwayat, dan pemantau. Fitur
+# PDF akan memberi pesan yang jelas bila diakses tanpa komponen ini,
+# bukan gagal dengan pesan membingungkan.
+#
+# Membutuhkan OPENAI_API_KEY pada berkas .env.
+# =====================================================================
+-r requirements.txt
+
+llama-index-core>=0.10.30
+llama-index-llms-openai>=0.1.16
+llama-index-embeddings-openai>=0.1.7
+llama-index-vector-stores-qdrant>=0.2.8
+llama-index-readers-file>=0.1.19
+qdrant-client>=1.8
+pypdf>=4.0

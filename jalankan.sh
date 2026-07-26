@@ -12,12 +12,33 @@ echo "  PROJECT AEGIS - STOCK AI COPILOT"
 echo "=========================================================="
 echo
 
+# --- 0. Pastikan berkas proyek lengkap -------------------------------
+# Penyebab kegagalan tersering: skrip dijalankan dari lokasi yang hanya
+# berisi berkas ini saja (mis. diekstrak sebagian dari ZIP).
+missing=""
+for f in requirements.txt rag_financial_api.py dashboard/streamlit_app.py services/market_data.py; do
+  [ -f "$f" ] || missing="$missing $f"
+done
+if [ -n "$missing" ]; then
+  echo "[X] Berkas proyek tidak lengkap di folder ini."
+  echo "    Tidak ditemukan:$missing"
+  echo "    Folder saat ini: $(pwd)"
+  echo
+  echo "    Pastikan ZIP sudah diekstrak SEPENUHNYA, lalu jalankan skrip"
+  echo "    ini dari dalam folder hasil ekstrak."
+  exit 1
+fi
+
 # --- 1. Cek Python ---------------------------------------------------
 if ! command -v python3 >/dev/null 2>&1; then
   echo "[X] Python 3 tidak ditemukan. Pasang dulu dari https://www.python.org/downloads/"
   exit 1
 fi
 echo "[1/4] $(python3 --version) terdeteksi."
+if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+  echo "[X] Dibutuhkan Python 3.10 atau lebih baru."
+  exit 1
+fi
 
 # --- 2. Virtual environment ------------------------------------------
 if [ ! -d ".venv" ]; then

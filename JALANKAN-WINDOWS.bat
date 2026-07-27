@@ -26,11 +26,22 @@ if not exist "dashboard\streamlit_app.py"  set "MISSING=!MISSING! dashboard\stre
 if not exist "services\market_data.py"     set "MISSING=!MISSING! services\market_data.py"
 
 if defined MISSING (
+    REM Layar dibersihkan agar pesan terbaca utuh dari atas — pesan yang
+    REM tergulung ke atas membuat penyebabnya tidak terlihat.
+    cls
+    echo.
+    echo  ==========================================================
+    echo    PROJECT AEGIS - PEMERIKSAAN GAGAL
+    echo  ==========================================================
+    echo.
     echo  [X] Berkas proyek tidak lengkap di folder ini.
     echo      Tidak ditemukan:!MISSING!
     echo.
     echo      Folder saat ini:
     echo      %CD%
+    echo.
+    echo      Isi folder ini:
+    dir /b /a 2>nul | findstr /n "^" | findstr /r "^[1-9]: ^1[0-9]:"
     echo.
     echo  ==========================================================
     echo   PENYEBAB TERSERING: file ini dijalankan dari DALAM ZIP.

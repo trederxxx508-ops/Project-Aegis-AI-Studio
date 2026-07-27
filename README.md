@@ -1,12 +1,16 @@
 # 🛡️ Project Aegis AI Studio — Stock AI Copilot
 
-> ## 🚀 Cara tercepat menjalankan (Windows)
-> 1. Pasang **Python** dari [python.org/downloads](https://www.python.org/downloads/) — ✅ centang **"Add Python to PATH"** saat instalasi
-> 2. **Klik KANAN file ZIP → "Extract All"** ⚠️ *(jangan jalankan file dari dalam ZIP)*
-> 3. Buka folder hasil ekstrak → klik dua kali **`JALANKAN-WINDOWS.bat`**
-> 4. Tunggu (pertama kali 3–8 menit), dashboard terbuka sendiri di browser
-> 5. Buka tab **🔎 Pemindai Otomatis** → klik **Pindai Sekarang**
+> ## 🚀 Cara termudah (Windows) — cukup 1 berkas
+> 1. Pasang **Python** dari [python.org/downloads](https://www.python.org/downloads/) — ✅ centang **"Add Python to PATH"**
+> 2. Unduh **`PASANG-AEGIS.bat`** ([klik di sini](https://raw.githubusercontent.com/trederxxx508-ops/Project-Aegis-AI-Studio/claude/stock-ai-copilot-blueprint-yfzddw/PASANG-AEGIS.bat) → Ctrl+S)
+> 3. **Klik dua kali berkas itu.** Selesai.
 >
+> Pemasang mengunduh, mengekstrak, dan menjalankan aplikasi sendiri ke
+> `C:\Users\<nama>\Aegis`. Tidak perlu mengekstrak ZIP secara manual — berkas ini
+> **tidak membutuhkan berkas lain di sebelahnya**, jadi tetap bekerja walau dijalankan
+> dari folder Downloads maupun dari dalam ZIP.
+>
+> *Sudah punya folder aplikasinya?* Cukup klik dua kali `JALANKAN-WINDOWS.bat` di dalamnya.
 > macOS / Linux: `bash jalankan.sh`
 
 ## 🛠️ Bila Gagal Berjalan

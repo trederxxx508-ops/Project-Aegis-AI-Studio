@@ -1,5 +1,7 @@
 //@version=5
-// SMC + Astronacci Pro Scalper
+// SMC + Astronacci Pro Scalper (Multi-Timeframe)
+// Top-down workflow: directional bias is taken from a higher timeframe and
+// entries are only signalled on the chart timeframe when they agree with it.
 // Combines Smart Money Concepts market structure (swing structure line,
 // BOS/CHoCH, Order Blocks with mitigation, Fair Value Gaps with mitigation,
 // liquidity sweeps) with a Fibonacci "Optimal Trade Entry" zone and
@@ -27,6 +29,11 @@ fibShallow      = input.float(0.618, "Zone Start (shallow)", minval = 0.1, maxva
 fibDeep         = input.float(0.786, "Zone End (deep)", minval = 0.1, maxval = 0.99, step = 0.001, group = grpFib)
 showFibTime     = input.bool(true, "Show Fibonacci Moon Cycles", group = grpFib)
 fibTimeCount    = input.int(6, "Number of Fib Time Marks", minval = 3, maxval = 12, group = grpFib)
+
+grpHtf = "Multi-Timeframe Bias"
+useHtfFilter = input.bool(true, "Only signal in direction of HTF bias", group = grpHtf, tooltip = "Blocks LTF reversal signals that go against the higher-timeframe trend (e.g. no BUY signal while HTF structure is bearish).")
+htfTimeframe = input.timeframe("60", "HTF Timeframe", group = grpHtf)
+htfSwingLen  = input.int(8, "HTF Swing Pivot Length", minval = 2, group = grpHtf)
 
 grpSig = "Reversal Signal"
 requireFibConfluence   = input.bool(true, "Require price inside Fib OTE zone", group = grpSig)
@@ -287,6 +294,38 @@ if showFibTime and (bullChoch or bearChoch)
         array.push(fibTimeLines, newLine)
         array.push(fibTimeLabels, newLabel)
 
+// ───────────────── HTF bias (top-down: bias from HTF, entry on LTF) ─────────────────
+// Same BOS/CHoCH structure logic, evaluated on the higher timeframe.
+// 1 = bullish structure, -1 = bearish structure, 0 = undefined.
+f_htfBias(len) =>
+    ph = ta.pivothigh(high, len, len)
+    pl = ta.pivotlow(low, len, len)
+    var float hRef = na
+    var float lRef = na
+    var bool  hUsed = false
+    var bool  lUsed = false
+    var int   b = 0
+    if not na(ph)
+        hRef := ph
+        hUsed := false
+    if not na(pl)
+        lRef := pl
+        lUsed := false
+    if not hUsed and not na(hRef) and ta.crossover(close, hRef)
+        hUsed := true
+        b := 1
+    if not lUsed and not na(lRef) and ta.crossunder(close, lRef)
+        lUsed := true
+        b := -1
+    b
+
+// [1] + lookahead_on returns the last *closed* HTF value, so the bias does not repaint.
+htfBiasRaw = request.security(syminfo.tickerid, htfTimeframe, f_htfBias(htfSwingLen)[1], lookahead = barmerge.lookahead_on)
+htfBias = nz(htfBiasRaw, 0)
+
+htfAllowsLong  = not useHtfFilter or htfBias == 1
+htfAllowsShort = not useHtfFilter or htfBias == -1
+
 // ───────────────────────── Reversal signal ─────────────────────────
 fibOkUp     = not requireFibConfluence or inZone
 fibOkDown   = not requireFibConfluence or inZone
@@ -296,27 +335,34 @@ sweepOkDown = not requireSweepConfluence or bearishSweepRecent
 enterZoneUp   = bias == "bullish" and inZone and not inZone[1]
 enterZoneDown = bias == "bearish" and inZone and not inZone[1]
 
-reversalUp   = enterZoneUp   and fibOkUp   and sweepOkUp
-reversalDown = enterZoneDown and fibOkDown and sweepOkDown
+reversalUp   = enterZoneUp   and fibOkUp   and sweepOkUp   and htfAllowsLong
+reversalDown = enterZoneDown and fibOkDown and sweepOkDown and htfAllowsShort
 
 plotshape(reversalUp, title = "Bullish Reversal", style = shape.triangleup, location = location.belowbar, color = bullColor, size = size.normal)
 plotshape(reversalDown, title = "Bearish Reversal", style = shape.triangledown, location = location.abovebar, color = bearColor, size = size.normal)
 
-alertcondition(reversalUp, title = "Bullish SMC+Astronacci Reversal", message = "{{ticker}} {{interval}}: Bullish reversal — SMC structure shift + Fibonacci OTE zone")
-alertcondition(reversalDown, title = "Bearish SMC+Astronacci Reversal", message = "{{ticker}} {{interval}}: Bearish reversal — SMC structure shift + Fibonacci OTE zone")
+alertcondition(reversalUp, title = "Bullish SMC+Astronacci Reversal", message = "{{ticker}} {{interval}}: Bullish reversal — HTF bias bullish + LTF structure shift into Fibonacci OTE zone")
+alertcondition(reversalDown, title = "Bearish SMC+Astronacci Reversal", message = "{{ticker}} {{interval}}: Bearish reversal — HTF bias bearish + LTF structure shift into Fibonacci OTE zone")
 
-bgcolor(showBiasBg ? (bias == "bullish" ? color.new(color.teal, 96) : bias == "bearish" ? color.new(color.red, 96) : na) : na, title = "Bias Background")
+// Background reflects HTF bias — the dominant context you trade with, not against.
+bgcolor(showBiasBg ? (htfBias == 1 ? color.new(color.teal, 95) : htfBias == -1 ? color.new(color.red, 95) : na) : na, title = "HTF Bias Background")
 
 // ───────────────────────────── Dashboard ─────────────────────────────
-var table infoTable = table.new(position.top_right, 2, 5, border_width = 1)
+aligned = (htfBias == 1 and bias == "bullish") or (htfBias == -1 and bias == "bearish")
+
+var table infoTable = table.new(position.top_right, 2, 7, border_width = 1)
 if showTable and barstate.islast
     table.cell(infoTable, 0, 0, "SMC + Astronacci", bgcolor = color.new(color.gray, 70), text_color = color.white)
     table.cell(infoTable, 1, 0, "Pro Scalper", bgcolor = color.new(color.gray, 70), text_color = color.white)
-    table.cell(infoTable, 0, 1, "Bias")
-    table.cell(infoTable, 1, 1, bias == "bullish" ? "Bullish ▲" : bias == "bearish" ? "Bearish ▼" : "Neutral", text_color = bias == "bullish" ? color.teal : bias == "bearish" ? color.red : color.gray)
-    table.cell(infoTable, 0, 2, "Last Event")
-    table.cell(infoTable, 1, 2, lastEvent)
-    table.cell(infoTable, 0, 3, "Fib OTE Zone")
-    table.cell(infoTable, 1, 3, inZone ? "Price Inside" : "Outside")
-    table.cell(infoTable, 0, 4, "Liquidity Sweep")
-    table.cell(infoTable, 1, 4, bullishSweepRecent ? "Bullish" : bearishSweepRecent ? "Bearish" : "None")
+    table.cell(infoTable, 0, 1, "HTF Bias (" + htfTimeframe + ")")
+    table.cell(infoTable, 1, 1, htfBias == 1 ? "Bullish ▲" : htfBias == -1 ? "Bearish ▼" : "Neutral", text_color = htfBias == 1 ? color.teal : htfBias == -1 ? color.red : color.gray)
+    table.cell(infoTable, 0, 2, "LTF Bias")
+    table.cell(infoTable, 1, 2, bias == "bullish" ? "Bullish ▲" : bias == "bearish" ? "Bearish ▼" : "Neutral", text_color = bias == "bullish" ? color.teal : bias == "bearish" ? color.red : color.gray)
+    table.cell(infoTable, 0, 3, "Alignment")
+    table.cell(infoTable, 1, 3, aligned ? "Aligned ✔" : "Counter-trend ✖", text_color = aligned ? color.teal : color.orange)
+    table.cell(infoTable, 0, 4, "Last Event")
+    table.cell(infoTable, 1, 4, lastEvent)
+    table.cell(infoTable, 0, 5, "Fib OTE Zone")
+    table.cell(infoTable, 1, 5, inZone ? "Price Inside" : "Outside")
+    table.cell(infoTable, 0, 6, "Liquidity Sweep")
+    table.cell(infoTable, 1, 6, bullishSweepRecent ? "Bullish" : bearishSweepRecent ? "Bearish" : "None")

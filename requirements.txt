@@ -1,0 +1,25 @@
+# =====================================================================
+# Komponen INTI — cukup untuk hampir semua fitur:
+# analisis saham, emas, makro ekonomi, uji mundur, riwayat, dashboard.
+#
+# Sengaja dijaga ringan. Komponen berat untuk membaca laporan PDF (RAG)
+# dipisah ke requirements-rag.txt karena bersifat opsional: memaksa
+# memasangnya membuat pemasangan jauh lebih lama dan menambah peluang
+# gagal, padahal fitur utama sama sekali tidak membutuhkannya.
+# =====================================================================
+
+# --- API ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+python-multipart>=0.0.9
+python-dotenv>=1.0
+
+# --- Data pasar & perhitungan ---
+yfinance>=0.2.37
+pandas>=2.0
+numpy>=1.26
+requests>=2.31
+
+# --- Dashboard ---
+streamlit>=1.33

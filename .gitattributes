@@ -1,0 +1,9 @@
+# Berkas batch Windows WAJIB memakai akhir baris CRLF.
+# Dengan LF saja, cmd.exe salah membaca blok if(...) dan label goto:
+# keluarannya terpotong dan logikanya gagal tanpa pesan galat yang jelas.
+# Aturan ini menjaga CRLF tetap utuh saat checkout maupun unduhan ZIP GitHub.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Skrip shell sebaliknya wajib LF
+*.sh text eol=lf

@@ -1,0 +1,167 @@
+"""Test Technical Engine — indikator & skor."""
+import numpy as np
+import pandas as pd
+import pytest
+
+from services import market_data
+
+
+def test_ema_matches_pandas_ewm(ohlcv_uptrend):
+    close = ohlcv_uptrend["Close"]
+    expected = close.ewm(span=20, adjust=False).mean()
+    pd.testing.assert_series_equal(market_data.ema(close, 20), expected)
+
+
+def test_rsi_bounds_and_direction(ohlcv_uptrend, ohlcv_downtrend):
+    rsi_up = market_data.rsi(ohlcv_uptrend["Close"]).dropna()
+    rsi_down = market_data.rsi(ohlcv_downtrend["Close"]).dropna()
+    assert ((rsi_up >= 0) & (rsi_up <= 100)).all()
+    assert rsi_up.iloc[-1] > rsi_down.iloc[-1]
+
+
+def test_rsi_all_gains_near_100():
+    series = pd.Series(np.linspace(100, 200, 60))
+    result = market_data.rsi(series).dropna()
+    assert result.iloc[-1] > 99
+
+
+def test_rsi_flat_series_is_neutral_not_overbought():
+    """Saham datar (tidak likuid / disuspend) harus netral 50, bukan 100."""
+    flat = pd.Series([1000.0] * 60)
+    assert market_data.rsi(flat).iloc[-1] == 50.0
+
+
+def test_rsi_all_losses_near_zero():
+    series = pd.Series(np.linspace(200, 100, 60))
+    result = market_data.rsi(series).dropna()
+    assert result.iloc[-1] < 1
+
+
+def test_indicators_flag_short_history(ohlcv_uptrend):
+    short = ohlcv_uptrend.tail(40)
+    ind = market_data.compute_indicators(short)
+    assert ind["data_points"] == 40
+    assert ind["ema_50_reliable"] is False
+    assert ind["ema_200_reliable"] is False
+
+    full = market_data.compute_indicators(ohlcv_uptrend)
+    assert full["ema_50_reliable"] is True
+    assert full["ema_200_reliable"] is True
+
+
+def test_short_history_scores_neutral_not_full_marks(ohlcv_uptrend):
+    """Riwayat pendek tidak boleh menghasilkan poin tren penuh."""
+    short = market_data.compute_indicators(ohlcv_uptrend.tail(40))
+    score = market_data.technical_score(short)
+
+    # Tren naik kuat pada data pendek: EMA20 (10) + netral 7.5 + netral 10 = 27.5
+    assert score["breakdown"]["trend_ema"] <= 27.5
+    assert len(score["notes"]) == 2
+    assert any("EMA 200" in n for n in score["notes"])
+
+    # Data penuh dengan tren sama harus mendapat poin lebih tinggi
+    full = market_data.technical_score(market_data.compute_indicators(ohlcv_uptrend))
+    assert full["breakdown"]["trend_ema"] > score["breakdown"]["trend_ema"]
+    assert full["notes"] == []
+
+
+def test_macd_components_consistent(ohlcv_uptrend):
+    close = ohlcv_uptrend["Close"]
+    macd_line, signal_line, hist = market_data.macd(close)
+    pd.testing.assert_series_equal(hist, macd_line - signal_line)
+    expected_macd = market_data.ema(close, 12) - market_data.ema(close, 26)
+    pd.testing.assert_series_equal(macd_line, expected_macd)
+
+
+def test_atr_positive_and_scales_with_range(ohlcv_uptrend):
+    atr = market_data.atr(ohlcv_uptrend).dropna()
+    assert (atr > 0).all()
+
+    wide = ohlcv_uptrend.copy()
+    wide["High"] = wide["High"] * 1.05
+    wide["Low"] = wide["Low"] * 0.95
+    atr_wide = market_data.atr(wide).dropna()
+    assert atr_wide.iloc[-1] > atr.iloc[-1]
+
+
+def test_support_resistance_brackets_price(ohlcv_uptrend):
+    sr = market_data.support_resistance(ohlcv_uptrend)
+    close = float(ohlcv_uptrend["Close"].iloc[-1])
+    assert sr["support"] < close
+    assert sr["resistance"] > close
+
+
+def test_compute_indicators_snapshot(ohlcv_uptrend):
+    ind = market_data.compute_indicators(ohlcv_uptrend)
+    for key in (
+        "last_price", "ema_20", "ema_50", "ema_200", "rsi_14",
+        "macd", "macd_signal", "macd_histogram", "atr_14",
+        "support", "resistance",
+    ):
+        assert key in ind
+    assert ind["atr_14"] > 0
+    assert 0 <= ind["rsi_14"] <= 100
+
+
+def test_compute_indicators_requires_enough_bars(ohlcv_uptrend):
+    with pytest.raises(ValueError):
+        market_data.compute_indicators(ohlcv_uptrend.head(10))
+
+
+class _FakeTicker:
+    """Pengganti yfinance.Ticker untuk menguji logika percobaan ulang."""
+
+    def __init__(self, outcomes):
+        self._outcomes = outcomes
+
+    def history(self, **kwargs):
+        outcome = self._outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def _patch_yfinance(monkeypatch, outcomes):
+    import sys
+    import types
+
+    fake = types.ModuleType("yfinance")
+    holder = _FakeTicker(outcomes)
+    fake.Ticker = lambda ticker: holder
+    monkeypatch.setitem(sys.modules, "yfinance", fake)
+    monkeypatch.setattr(market_data, "RETRY_BACKOFF_SECONDS", (0.0, 0.0))
+
+
+def test_fetch_retries_then_succeeds(monkeypatch, ohlcv_uptrend):
+    _patch_yfinance(monkeypatch, [pd.DataFrame(), ohlcv_uptrend])
+    df = market_data.fetch_ohlcv("AAA.JK")
+    assert len(df) == len(ohlcv_uptrend)
+
+
+def test_fetch_rate_limit_raises_dedicated_error(monkeypatch):
+    err = RuntimeError("429 Too Many Requests")
+    _patch_yfinance(monkeypatch, [err, err, err])
+    with pytest.raises(market_data.RateLimitedError, match="membatasi permintaan"):
+        market_data.fetch_ohlcv("AAA.JK")
+
+
+def test_fetch_network_failure_raises_connection_error(monkeypatch):
+    err = OSError("connection reset by peer")
+    _patch_yfinance(monkeypatch, [err, err, err])
+    with pytest.raises(ConnectionError, match="koneksi internet"):
+        market_data.fetch_ohlcv("AAA.JK")
+
+
+def test_fetch_empty_everywhere_raises_value_error(monkeypatch):
+    _patch_yfinance(monkeypatch, [pd.DataFrame(), pd.DataFrame(), pd.DataFrame()])
+    with pytest.raises(ValueError, match="Tidak ada data harga"):
+        market_data.fetch_ohlcv("SALAH.JK")
+
+
+def test_technical_score_uptrend_beats_downtrend(ohlcv_uptrend, ohlcv_downtrend):
+    score_up = market_data.technical_score(market_data.compute_indicators(ohlcv_uptrend))
+    score_down = market_data.technical_score(market_data.compute_indicators(ohlcv_downtrend))
+    assert 0 <= score_down["score"] < score_up["score"] <= 100
+    assert set(score_up["breakdown"]) == {
+        "trend_ema", "momentum_rsi", "macd", "support_resistance",
+    }

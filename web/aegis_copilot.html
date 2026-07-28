@@ -1,0 +1,1227 @@
+<title>Aegis — Stock AI Copilot</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --accent: #2a78d6;
+    --accent-soft: rgba(42,120,214,0.12);
+    --s1: #2a78d6;  /* harga */
+    --s2: #eb6834;  /* EMA 20 */
+    --s3: #1baf7a;  /* EMA 50 */
+    --s4: #eda100;  /* EMA 200 */
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warn: #fab219;
+    --crit: #d03b3b;
+    --good-soft: rgba(12,163,12,0.12);
+    --warn-soft: rgba(250,178,25,0.16);
+    --crit-soft: rgba(208,59,59,0.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --accent: #3987e5;
+      --accent-soft: rgba(57,135,229,0.18);
+      --s1: #3987e5;
+      --s2: #d95926;
+      --s3: #199e70;
+      --s4: #c98500;
+      --good-text: #0ca30c;
+      --good-soft: rgba(12,163,12,0.18);
+      --warn-soft: rgba(250,178,25,0.14);
+      --crit-soft: rgba(230,103,103,0.16);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --accent: #3987e5;
+    --accent-soft: rgba(57,135,229,0.18);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --good-text: #0ca30c;
+    --good-soft: rgba(12,163,12,0.18);
+    --warn-soft: rgba(250,178,25,0.14);
+    --crit-soft: rgba(230,103,103,0.16);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --accent: #2a78d6;
+    --accent-soft: rgba(42,120,214,0.12);
+    --s1: #2a78d6;
+    --s2: #eb6834;
+    --s3: #1baf7a;
+    --s4: #eda100;
+    --good-text: #006300;
+    --good-soft: rgba(12,163,12,0.12);
+    --warn-soft: rgba(250,178,25,0.16);
+    --crit-soft: rgba(208,59,59,0.12);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
+
+  header.top {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 6px 2px 18px;
+  }
+  .wordmark { font-size: 22px; font-weight: 800; letter-spacing: 0.02em; }
+  .wordmark .tri { color: var(--accent); }
+  .tagline { color: var(--ink-2); font-size: 13px; }
+
+  .layout { display: grid; grid-template-columns: 350px minmax(0,1fr); gap: 16px; align-items: start; }
+  @media (max-width: 940px) { .layout { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .rail { display: flex; flex-direction: column; gap: 14px; }
+  .results { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 10px;
+  }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 3px; }
+  .field input[type="number"], .field input[type="text"], .field textarea, .field select {
+    width: 100%; padding: 7px 9px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--page); color: var(--ink);
+    font: inherit; font-variant-numeric: tabular-nums;
+  }
+  .field textarea { resize: vertical; min-height: 66px; font-size: 13px; }
+  .field input:focus-visible, .field textarea:focus-visible, button:focus-visible,
+  .seg button:focus-visible, .field select:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 10px; }
+  .seg button {
+    flex: 1; padding: 7px 4px; border: 0; background: transparent; color: var(--ink-2);
+    font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+
+  button.primary {
+    width: 100%; padding: 11px; border: 0; border-radius: 7px;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 700;
+    font-size: 15px; cursor: pointer;
+  }
+  button.primary:hover { filter: brightness(1.06); }
+  button.ghost {
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
+    background: transparent; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button.ghost:hover { background: var(--accent-soft); }
+
+  /* Hero verdict */
+  .hero { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .hero .score { font-size: 52px; font-weight: 800; line-height: 1; letter-spacing: -0.01em; }
+  .hero .of { font-size: 15px; font-weight: 500; color: var(--muted); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 16px; border-radius: 999px;
+    font-weight: 800; font-size: 16px; letter-spacing: 0.03em;
+  }
+  .pill.good { background: var(--good-soft); color: var(--good-text); }
+  .pill.warn { background: var(--warn-soft); color: var(--ink); }
+  .pill.crit { background: var(--crit-soft); color: var(--crit); }
+  .hero-meta { flex: 1 1 200px; min-width: 180px; color: var(--ink-2); font-size: 12.5px; }
+  .hero-empty { color: var(--ink-2); font-size: 14px; padding: 8px 0; }
+
+  /* Score bars */
+  .sbar { display: grid; grid-template-columns: 148px minmax(0,1fr) 52px; gap: 10px; align-items: center; margin-bottom: 9px; }
+  .sbar .lbl { font-size: 13px; }
+  .sbar .lbl small { color: var(--muted); }
+  .sbar .track { height: 10px; background: var(--grid); border-radius: 5px; overflow: hidden; }
+  .sbar .fill { height: 100%; background: var(--accent); border-radius: 5px; }
+  .sbar .val { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+
+  /* Chart */
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; color: var(--ink-2); }
+  .legend .chip { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .sw { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .chartbox { position: relative; }
+  canvas { display: block; width: 100%; }
+  .tooltip {
+    position: absolute; pointer-events: none; display: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 10px; font-size: 12px; line-height: 1.55;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.14); z-index: 5; min-width: 148px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tooltip .tdate { font-weight: 700; margin-bottom: 2px; }
+  .tooltip .trow { display: flex; justify-content: space-between; gap: 14px; }
+  .tooltip .trow .k { color: var(--ink-2); display: inline-flex; align-items: center; gap: 5px; }
+  .tooltip .sw { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  /* Tables */
+  .tscroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--grid); font-size: 13px; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+  th:first-child, td:first-child { text-align: left; }
+  tr:last-child td { border-bottom: 0; }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .kv .item { border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; background: var(--page); }
+  .kv .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .kv .v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+  .warnbox {
+    border: 1px solid var(--border); border-left: 3px solid var(--warn);
+    background: var(--warn-soft); border-radius: 6px; padding: 8px 12px;
+    font-size: 12.5px; margin-top: 10px;
+  }
+  .notebox { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; font-size: 12.5px; color: var(--ink-2); }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  footer.foot { margin-top: 26px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+  .hide { display: none !important; }
+  @media (prefers-reduced-motion: no-preference) {
+    .sbar .fill { transition: width 0.5s ease; }
+    .seg button, button.ghost { transition: background 0.15s ease; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="wordmark"><span class="tri">▲</span> AEGIS</div>
+    <div class="tagline">Stock AI Copilot — Fundamental · Teknikal · Sentimen · Risiko · Master Score</div>
+  </header>
+
+  <div class="layout">
+    <!-- ================= INPUT RAIL ================= -->
+    <div class="rail">
+      <section class="card">
+        <p class="eyebrow">1 · Data Harga (OHLCV)</p>
+        <div class="seg" role="tablist">
+          <button id="srcDemo" class="on" type="button">Data demo</button>
+          <button id="srcCsv" type="button">Upload CSV</button>
+          <button id="srcPaste" type="button">Tempel CSV</button>
+        </div>
+        <div id="paneDemo">
+          <div class="field">
+            <label for="demoTicker">Nama / ticker (label saja)</label>
+            <input type="text" id="demoTicker" value="DEMO.JK">
+          </div>
+          <p class="hint">Data demo = deret harga sintetis 260 hari untuk mencoba aplikasi. <strong>Bukan data pasar riil.</strong></p>
+        </div>
+        <div id="paneCsv" class="hide">
+          <div class="field">
+            <label for="csvFile">File CSV (format Yahoo Finance: Date,Open,High,Low,Close,…)</label>
+            <input type="file" id="csvFile" accept=".csv,text/csv">
+          </div>
+          <p class="hint">Unduh dari finance.yahoo.com → Historical Data → Download, lalu pilih filenya di sini.</p>
+        </div>
+        <div id="panePaste" class="hide">
+          <div class="field">
+            <label for="csvText">Tempel isi CSV (min. 30 baris)</label>
+            <textarea id="csvText" placeholder="Date,Open,High,Low,Close,Volume&#10;2026-01-05,4500,4560,4480,4550,12300000&#10;…"></textarea>
+          </div>
+        </div>
+        <div id="dataStatus" class="hint"></div>
+      </section>
+
+      <section class="card">
+        <p class="eyebrow">2 · Fundamental (opsional)</p>
+        <div class="grid2">
+          <div class="field"><label for="fROE">ROE (%)</label><input type="number" id="fROE" step="0.1" placeholder="mis. 18"></div>
+          <div class="field"><label for="fMargin">Margin laba (%)</label><input type="number" id="fMargin" step="0.1" placeholder="mis. 24"></div>
+          <div class="field"><label for="fGrowth">Pertumbuhan pendapatan (%)</label><input type="number" id="fGrowth" step="0.1" placeholder="mis. 9"></div>
+          <div class="field"><label for="fDER">DER (%)</label><input type="number" id="fDER" step="1" placeholder="mis. 85"></div>
+          <div class="field"><label for="fPER">PER (x)</label><input type="number" id="fPER" step="0.1" placeholder="mis. 14"></div>
+        </div>
+        <p class="hint">Isi dari laporan keuangan / RTI / Stockbit. Kosongkan semua → skor netral 50. Analisis RAG PDF otomatis tersedia di backend FastAPI.</p>
+      </section>
+
+      <section class="card">
+        <p class="eyebrow">3 · Sentimen Berita (opsional)</p>
+        <div class="field">
+          <label for="newsText">Judul berita, satu per baris (ID / EN)</label>
+          <textarea id="newsText" placeholder="Laba bersih naik 21% didorong ekspansi kredit&#10;Analysts upgrade outlook, strong growth ahead"></textarea>
+        </div>
+        <p class="hint">Kosong → skor netral 50.</p>
+      </section>
+
+      <section class="card">
+        <p class="eyebrow">4 · Modal &amp; Risiko</p>
+        <div class="field"><label for="capital">Total modal (IDR)</label><input type="number" id="capital" value="100000000" step="1000000" min="100000"></div>
+        <div class="grid2">
+          <div class="field"><label for="riskPct">Risiko per trade (%)</label><input type="number" id="riskPct" value="2" step="0.5" min="0.1" max="20"></div>
+          <div class="field"><label for="atrK">ATR multiplier (k)</label><input type="number" id="atrK" value="2" step="0.25" min="0.5" max="5"></div>
+          <div class="field"><label for="winRate">Win rate (%)</label><input type="number" id="winRate" value="55" step="1" min="0" max="100"></div>
+          <div class="field"><label for="rr">Reward : Risk</label><input type="number" id="rr" value="2" step="0.5" min="0.5" max="10"></div>
+        </div>
+        <button class="primary" id="btnAnalyze" type="button">⚡ Analisis Sekarang</button>
+      </section>
+    </div>
+
+    <!-- ================= RESULTS ================= -->
+    <div class="results">
+      <section class="card" id="heroCard">
+        <p class="eyebrow">Sinyal Akhir</p>
+        <div id="heroEmpty" class="hero-empty">Atur input di panel kiri lalu tekan <strong>⚡ Analisis Sekarang</strong>. Mode demo bisa langsung dijalankan.</div>
+        <div id="heroBody" class="hide">
+          <div class="hero">
+            <div>
+              <span class="score" id="totalScore">–</span>
+              <span class="of">/ 100</span>
+            </div>
+            <span class="pill" id="signalPill"></span>
+            <div class="hero-meta" id="heroMeta"></div>
+          </div>
+          <div style="margin-top:18px">
+            <div class="sbar">
+              <span class="lbl">Fundamental <small>× 0,5</small></span>
+              <div class="track"><div class="fill" id="barF" style="width:0%"></div></div>
+              <span class="val" id="valF">–</span>
+            </div>
+            <div class="sbar">
+              <span class="lbl">Teknikal <small>× 0,3</small></span>
+              <div class="track"><div class="fill" id="barT" style="width:0%"></div></div>
+              <span class="val" id="valT">–</span>
+            </div>
+            <div class="sbar">
+              <span class="lbl">Sentimen <small>× 0,2</small></span>
+              <div class="track"><div class="fill" id="barS" style="width:0%"></div></div>
+              <span class="val" id="valS">–</span>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="ghost" id="btnSaveJson" type="button">⬇ Simpan hasil (JSON)</button>
+            <button class="ghost" id="btnCopy" type="button">Salin ringkasan</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card hide" id="chartCard">
+        <p class="eyebrow">Harga &amp; Tren — <span id="chartTicker"></span></p>
+        <div class="legend" id="priceLegend">
+          <span class="chip"><span class="sw" style="background:var(--s1)"></span>Harga</span>
+          <span class="chip"><span class="sw" style="background:var(--s2)"></span>EMA 20</span>
+          <span class="chip"><span class="sw" style="background:var(--s3)"></span>EMA 50</span>
+          <span class="chip"><span class="sw" style="background:var(--s4)"></span>EMA 200</span>
+          <span class="chip"><span class="sw" style="background:var(--baseline);height:1px;border-top:1px dashed var(--muted)"></span>Support / Resistance</span>
+        </div>
+        <div class="chartbox">
+          <canvas id="priceChart" height="300"></canvas>
+          <div class="tooltip" id="priceTip"></div>
+        </div>
+        <p class="eyebrow" style="margin-top:16px">RSI 14</p>
+        <div class="chartbox">
+          <canvas id="rsiChart" height="90"></canvas>
+        </div>
+        <details>
+          <summary>Tabel data (30 bar terakhir)</summary>
+          <div class="tscroll" style="margin-top:8px">
+            <table id="dataTable"></table>
+          </div>
+        </details>
+      </section>
+
+      <section class="card hide" id="techCard">
+        <p class="eyebrow">Snapshot Indikator Teknikal</p>
+        <div class="kv" id="indGrid"></div>
+        <p class="notebox" id="techBreakdown"></p>
+        <div id="techNotes"></div>
+      </section>
+
+      <section class="card hide" id="riskCard">
+        <p class="eyebrow">Rencana Risiko &amp; Posisi <span style="text-transform:none;letter-spacing:0">(1 lot = 100 lembar)</span></p>
+        <div class="tscroll">
+          <table id="riskTable"></table>
+        </div>
+        <div id="riskWarnings"></div>
+        <p class="notebox">Rumus: SL = Entry − (k × ATR14) · Lembar = (Modal × Risiko%) ÷ (Entry − SL) · Kelly fraksional f* = 0,25 × ((W·R − (1−W)) ÷ R)</p>
+      </section>
+
+      <section class="card hide" id="sentCard">
+        <p class="eyebrow">Rincian Sentimen &amp; Fundamental</p>
+        <div id="sentDetail"></div>
+        <div id="fundDetail" style="margin-top:12px"></div>
+      </section>
+
+      <footer class="foot">
+        Semua kalkulasi berjalan sepenuhnya di browser Anda — tidak ada data yang dikirim keluar.
+        Data pasar live (yfinance), ingest laporan PDF, dan tanya-jawab RAG berjalan di backend FastAPI proyek ini
+        (<code>rag_financial_api.py</code>).<br>
+        ⚠️ Ini alat bantu keputusan (decision support), <strong>bukan nasihat keuangan</strong>. Selalu lakukan riset mandiri.
+      </footer>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ENGINES (pure functions, no DOM) ============ -->
+<script>
+"use strict";
+
+/* ---------- Technical Engine (port 1:1 dari services/market_data.py) ---------- */
+
+function emaArr(v, span) {
+  const a = 2 / (span + 1), out = new Array(v.length);
+  out[0] = v[0];
+  for (let i = 1; i < v.length; i++) out[i] = out[i - 1] + a * (v[i] - out[i - 1]);
+  return out;
+}
+
+function rsiArr(v, period) {
+  period = period || 14;
+  const n = v.length, out = new Array(n).fill(NaN);
+  if (n < 2) return out;
+  const alpha = 1 / period;
+  let avgG = null, avgL = null;
+  for (let i = 1; i < n; i++) {
+    const d = v[i] - v[i - 1];
+    const g = Math.max(d, 0), l = Math.max(-d, 0);
+    if (avgG === null) { avgG = g; avgL = l; }
+    else { avgG += alpha * (g - avgG); avgL += alpha * (l - avgL); }
+    // Harga datar total (tanpa naik maupun turun) = netral 50, bukan 100.
+    if (avgL === 0) out[i] = avgG === 0 ? 50 : 100;
+    else out[i] = 100 - 100 / (1 + avgG / avgL);
+  }
+  return out;
+}
+
+function macdArr(v, fast, slow, signal) {
+  fast = fast || 12; slow = slow || 26; signal = signal || 9;
+  const ef = emaArr(v, fast), es = emaArr(v, slow);
+  const line = ef.map((x, i) => x - es[i]);
+  const sig = emaArr(line, signal);
+  const hist = line.map((x, i) => x - sig[i]);
+  return { line, sig, hist };
+}
+
+function atrArr(bars, period) {
+  period = period || 14;
+  const n = bars.length, tr = new Array(n), out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const b = bars[i];
+    if (i === 0) tr[i] = b.h - b.l;
+    else {
+      const pc = bars[i - 1].c;
+      tr[i] = Math.max(b.h - b.l, Math.abs(b.h - pc), Math.abs(b.l - pc));
+    }
+  }
+  const alpha = 1 / period;
+  out[0] = tr[0];
+  for (let i = 1; i < n; i++) out[i] = out[i - 1] + alpha * (tr[i] - out[i - 1]);
+  return out;
+}
+
+function supportResistance(bars, windowN, lookback) {
+  windowN = windowN || 5; lookback = lookback || 120;
+  const data = bars.slice(-lookback);
+  const close = data[data.length - 1].c;
+  const highs = data.map(b => b.h), lows = data.map(b => b.l);
+  const pivotHighs = [], pivotLows = [];
+  for (let i = windowN; i < data.length - windowN; i++) {
+    let maxH = -Infinity, minL = Infinity;
+    for (let j = i - windowN; j <= i + windowN; j++) {
+      if (highs[j] > maxH) maxH = highs[j];
+      if (lows[j] < minL) minL = lows[j];
+    }
+    if (highs[i] >= maxH) pivotHighs.push(highs[i]);
+    if (lows[i] <= minL) pivotLows.push(lows[i]);
+  }
+  const minLow = Math.min.apply(null, lows), maxHigh = Math.max.apply(null, highs);
+  const sups = pivotLows.filter(p => p < close);
+  const ress = pivotHighs.filter(p => p > close);
+  let support = sups.length ? Math.max.apply(null, sups) : minLow;
+  let resistance = ress.length ? Math.min.apply(null, ress) : maxHigh;
+  if (support >= close) support = minLow;
+  if (resistance <= close) resistance = maxHigh;
+  return { support: Math.round(support * 100) / 100, resistance: Math.round(resistance * 100) / 100 };
+}
+
+function computeIndicators(bars) {
+  if (bars.length < 30) throw new Error("Butuh minimal 30 bar data untuk menghitung indikator.");
+  const close = bars.map(b => b.c);
+  const m = macdArr(close);
+  const sr = supportResistance(bars);
+  const last = a => a[a.length - 1];
+  const r2 = x => Math.round(x * 100) / 100;
+  const r4 = x => Math.round(x * 10000) / 10000;
+  const n = bars.length;
+  return {
+    data_points: n,
+    ema_50_reliable: n >= 50,
+    ema_200_reliable: n >= 200,
+    last_price: r2(last(close)),
+    ema_20: r2(last(emaArr(close, 20))),
+    ema_50: r2(last(emaArr(close, 50))),
+    ema_200: r2(last(emaArr(close, 200))),
+    rsi_14: r2(last(rsiArr(close, 14))),
+    macd: r4(last(m.line)),
+    macd_signal: r4(last(m.sig)),
+    macd_histogram: r4(last(m.hist)),
+    atr_14: r4(last(atrArr(bars, 14))),
+    support: sr.support,
+    resistance: sr.resistance
+  };
+}
+
+function technicalScore(ind) {
+  const price = ind.last_price;
+  const breakdown = {};
+  const notes = [];
+  const ema50ok = ind.ema_50_reliable !== false;
+  const ema200ok = ind.ema_200_reliable !== false;
+
+  let trend = 0;
+  if (price > ind.ema_20) trend += 10;
+
+  if (ema50ok) {
+    if (price > ind.ema_50) trend += 10;
+    if (ind.ema_20 > ind.ema_50) trend += 5;
+  } else {
+    trend += 7.5; // netral: riwayat < 50 bar
+    notes.push("EMA 50 belum andal (data < 50 bar) — dinilai netral.");
+  }
+
+  if (ema200ok) {
+    if (price > ind.ema_200) trend += 15;
+    if (ema50ok && ind.ema_50 > ind.ema_200) trend += 5;
+  } else {
+    trend += 10; // netral: riwayat < 200 bar
+    notes.push("EMA 200 belum andal (data < 200 bar) — dinilai netral. Muat data ≥ 1 tahun untuk penilaian tren penuh.");
+  }
+  breakdown.trend_ema = trend;
+
+  const r = ind.rsi_14;
+  let momentum;
+  if (r >= 45 && r <= 65) momentum = 20;
+  else if (r >= 30 && r < 45) momentum = 12;
+  else if (r > 65 && r <= 75) momentum = 10;
+  else if (r < 30) momentum = 8;
+  else momentum = 4;
+  breakdown.momentum_rsi = momentum;
+
+  let mac = 0;
+  if (ind.macd > ind.macd_signal) mac += 15;
+  if (ind.macd > 0) mac += 10;
+  breakdown.macd = mac;
+
+  let srScore = 5;
+  if (ind.support && ind.support > 0) {
+    const d = (price - ind.support) / price;
+    if (d >= 0 && d <= 0.05) srScore = 10;
+  }
+  if (ind.resistance && ind.resistance > 0) {
+    const d = (ind.resistance - price) / price;
+    if (d >= 0 && d <= 0.02) srScore = 2;
+  }
+  breakdown.support_resistance = srScore;
+
+  const total = Math.min(100, trend + momentum + mac + srScore);
+  return { score: Math.round(total * 100) / 100, breakdown, notes };
+}
+
+/* ---------- Risk Engine (port 1:1 dari services/risk_engine.py) ---------- */
+
+function calculatePositionSize(p) {
+  const SHARES_PER_LOT = 100, KELLY = 0.25;
+  if (!(p.total_capital > 0)) throw new Error("Total modal harus > 0");
+  if (!(p.max_risk_pct > 0 && p.max_risk_pct < 1)) throw new Error("Risiko per trade harus 0–100%");
+  if (!(p.entry_price > 0)) throw new Error("Harga entry harus > 0");
+  if (!(p.atr_value > 0)) throw new Error("ATR harus > 0");
+  if (!(p.atr_multiplier > 0)) throw new Error("ATR multiplier harus > 0");
+  if (!(p.win_rate >= 0 && p.win_rate <= 1)) throw new Error("Win rate harus 0–100%");
+  if (!(p.reward_risk_ratio > 0)) throw new Error("Reward:Risk harus > 0");
+
+  const warnings = [];
+  let stopLoss = p.entry_price - p.atr_multiplier * p.atr_value;
+  if (stopLoss <= 0) {
+    stopLoss = p.entry_price * 0.10;
+    warnings.push("Stop loss ATR jatuh ≤ 0; dibatasi ke 10% dari harga entry. Pertimbangkan menurunkan ATR multiplier.");
+  }
+  const riskPerShare = p.entry_price - stopLoss;
+  const maxRiskAmount = p.total_capital * p.max_risk_pct;
+  const sharesToBuy = maxRiskAmount / riskPerShare;
+
+  const kellyF = (p.win_rate * p.reward_risk_ratio - (1 - p.win_rate)) / p.reward_risk_ratio;
+  const fractionalKelly = Math.max(0, kellyF * KELLY);
+  const adjustedShares = sharesToBuy * (1 + fractionalKelly);
+
+  let lots = Math.floor(adjustedShares / SHARES_PER_LOT);
+  const affordable = Math.floor(p.total_capital / (SHARES_PER_LOT * p.entry_price));
+  if (lots > affordable) {
+    lots = affordable;
+    warnings.push("Ukuran posisi dibatasi oleh total modal yang tersedia (alokasi tidak boleh > 100% portofolio).");
+  }
+  if (lots <= 0) {
+    warnings.push("Modal / toleransi risiko terlalu kecil untuk membeli 1 lot pada harga dan volatilitas saat ini.");
+    lots = 0;
+  }
+  const shares = lots * SHARES_PER_LOT;
+  const alloc = shares * p.entry_price;
+  const r2 = x => Math.round(x * 100) / 100;
+  return {
+    entry_price: p.entry_price,
+    stop_loss_price: r2(stopLoss),
+    risk_per_share: r2(riskPerShare),
+    max_risk_amount: r2(maxRiskAmount),
+    kelly_fraction: Math.round(fractionalKelly * 10000) / 10000,
+    recommended_lots: lots,
+    recommended_shares: shares,
+    total_allocation: r2(alloc),
+    max_potential_loss: r2(shares * riskPerShare),
+    portfolio_exposure_pct: r2(alloc / p.total_capital * 100),
+    take_profit_price: r2(p.entry_price + p.reward_risk_ratio * riskPerShare),
+    warnings
+  };
+}
+
+/* ---------- Sentiment Engine (port dari services/sentiment_engine.py) ---------- */
+
+const POS_WORDS = new Set(("beat beats growth surge surges rally record profit profits upgrade upgraded bullish gain gains strong " +
+  "outperform buy dividend expansion expands rebound recovery soar soars jump jumps rise rises boost positive optimistic " +
+  "breakthrough wins award naik menguat laba untung tumbuh pertumbuhan rekor ekspansi dividen positif optimis melonjak " +
+  "melesat cuan akumulasi").split(" "));
+const NEG_WORDS = new Set(("miss misses loss losses fall falls drop drops plunge plunges downgrade downgraded bearish weak lawsuit " +
+  "fraud probe investigation layoff layoffs bankruptcy default sell underperform decline declines negative warning cut cuts " +
+  "slump crash risk turun melemah rugi kerugian anjlok merosot negatif pailit gagal denda sanksi phk koreksi tekanan").split(" "));
+
+function scoreHeadlines(headlines) {
+  if (!headlines.length) {
+    return { score: 50, label: "NEUTRAL", headline_count: 0, details: [], note: "Tidak ada berita — skor netral." };
+  }
+  const details = [];
+  let sum = 0;
+  for (const title of headlines) {
+    const tokens = new Set(title.split(/\s+/).map(t => t.replace(/^[.,!?:;()'"]+|[.,!?:;()'"]+$/g, "").toLowerCase()));
+    let pos = 0, neg = 0;
+    tokens.forEach(t => { if (POS_WORDS.has(t)) pos++; if (NEG_WORDS.has(t)) neg++; });
+    const pol = (pos + neg) === 0 ? 0 : (pos - neg) / (pos + neg);
+    sum += pol;
+    details.push({ headline: title, polarity: Math.round(pol * 100) / 100 });
+  }
+  const avg = sum / headlines.length;
+  const score = Math.round((50 + avg * 50) * 100) / 100;
+  const label = score >= 60 ? "POSITIVE" : score <= 40 ? "NEGATIVE" : "NEUTRAL";
+  return { score, label, headline_count: headlines.length, details };
+}
+
+/* ---------- Fundamental Engine (port heuristik dari services/fundamental_engine.py) ---------- */
+
+function scoreFundamentalManual(inp) {
+  // inp: { roe, margin, growth (fraksi), der (persen), pe } — null jika kosong
+  const comp = {};
+  let maxPts = 0;
+  if (inp.roe != null) { maxPts += 25; comp.roe = inp.roe > 0.20 ? 25 : inp.roe > 0.10 ? 18 : inp.roe > 0.05 ? 10 : inp.roe > 0 ? 5 : 0; }
+  if (inp.margin != null) { maxPts += 20; comp.profit_margin = inp.margin > 0.20 ? 20 : inp.margin > 0.10 ? 14 : inp.margin > 0.05 ? 8 : inp.margin > 0 ? 4 : 0; }
+  if (inp.growth != null) { maxPts += 15; comp.revenue_growth = inp.growth > 0.15 ? 15 : inp.growth > 0.05 ? 10 : inp.growth > 0 ? 6 : 0; }
+  if (inp.der != null) { maxPts += 20; comp.debt_to_equity = inp.der < 50 ? 20 : inp.der < 100 ? 14 : inp.der < 200 ? 7 : 2; }
+  if (inp.pe != null && inp.pe > 0) { maxPts += 20; comp.valuation_pe = inp.pe < 10 ? 20 : inp.pe < 15 ? 16 : inp.pe < 25 ? 10 : inp.pe < 40 ? 5 : 2; }
+
+  const filled = Object.keys(comp).length;
+  if (filled < 2) {
+    return { score: 50, source: "neutral_fallback", note: "Isi minimal 2 rasio untuk skor fundamental; sementara dipakai skor netral 50." };
+  }
+  let s = 0; for (const k in comp) s += comp[k];
+  return { score: Math.round(s / maxPts * 10000) / 100, source: "manual_ratios", components: comp };
+}
+
+/* ---------- Master Scoring Engine (port dari services/scoring_engine.py) ---------- */
+
+const WEIGHTS = { fundamental: 0.5, technical: 0.3, sentiment: 0.2 };
+
+function classifySignal(t) {
+  if (t >= 70) return "STRONG BUY";
+  if (t >= 55) return "BUY";
+  if (t >= 40) return "HOLD";
+  if (t >= 25) return "SELL";
+  return "STRONG SELL";
+}
+
+function masterScore(f, t, s) {
+  const clamp = x => Math.max(0, Math.min(100, x));
+  const comp = { fundamental: clamp(f), technical: clamp(t), sentiment: clamp(s) };
+  const total = Math.round((comp.fundamental * WEIGHTS.fundamental + comp.technical * WEIGHTS.technical + comp.sentiment * WEIGHTS.sentiment) * 100) / 100;
+  return { total_score: total, signal: classifySignal(total), components: comp, weights: WEIGHTS };
+}
+
+/* ---------- Demo data (deterministik — BUKAN data pasar riil) ---------- */
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeDemoBars(days) {
+  days = days || 260;
+  const rnd = mulberry32(42);
+  const gauss = () => {
+    const u = Math.max(rnd(), 1e-9), v = rnd();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+  const bars = [];
+  let price = 4400;
+  const end = new Date();
+  const dates = [];
+  let d = new Date(end);
+  while (dates.length < days) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) dates.unshift(new Date(d));
+    d.setDate(d.getDate() - 1);
+  }
+  for (let i = 0; i < days; i++) {
+    // tiga regime: naik → koreksi → pemulihan
+    let drift;
+    if (i < days * 0.45) drift = 0.0016;
+    else if (i < days * 0.65) drift = -0.0022;
+    else drift = 0.0019;
+    const ret = drift + gauss() * 0.013;
+    const open = price;
+    const close = Math.max(50, price * Math.exp(ret));
+    const hi = Math.max(open, close) * (1 + Math.abs(gauss()) * 0.004);
+    const lo = Math.min(open, close) * (1 - Math.abs(gauss()) * 0.004);
+    bars.push({
+      date: dates[i].toISOString().slice(0, 10),
+      o: Math.round(open), h: Math.round(hi), l: Math.round(lo), c: Math.round(close),
+      v: Math.round(5e6 + rnd() * 7.5e7)
+    });
+    price = close;
+  }
+  return bars;
+}
+
+/* ---------- CSV parser (format Yahoo Finance & sejenis) ---------- */
+
+function parseCsv(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) throw new Error("CSV kosong atau terlalu pendek.");
+  const delim = lines[0].includes(";") && !lines[0].includes(",") ? ";" : ",";
+  const header = lines[0].split(delim).map(h => h.trim().toLowerCase());
+  const idx = names => {
+    for (const n of names) { const i = header.indexOf(n); if (i !== -1) return i; }
+    return -1;
+  };
+  const iDate = idx(["date", "tanggal"]);
+  const iOpen = idx(["open"]);
+  const iHigh = idx(["high"]);
+  const iLow = idx(["low"]);
+  const iClose = idx(["close", "adj close", "adj_close", "closing price"]);
+  const iVol = idx(["volume", "vol"]);
+  if (iDate === -1 || iOpen === -1 || iHigh === -1 || iLow === -1 || iClose === -1) {
+    throw new Error("Header CSV harus memuat kolom Date, Open, High, Low, Close.");
+  }
+  const bars = [];
+  for (let li = 1; li < lines.length; li++) {
+    const cells = lines[li].split(delim);
+    const o = parseFloat(cells[iOpen]), h = parseFloat(cells[iHigh]),
+          l = parseFloat(cells[iLow]), c = parseFloat(cells[iClose]);
+    const date = (cells[iDate] || "").trim();
+    if (!date || !isFinite(o) || !isFinite(h) || !isFinite(l) || !isFinite(c)) continue;
+    bars.push({ date, o, h, l, c, v: iVol !== -1 ? parseFloat(cells[iVol]) || 0 : 0 });
+  }
+  if (bars.length < 30) throw new Error("Butuh minimal 30 baris data valid (ditemukan " + bars.length + ").");
+  bars.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  return bars;
+}
+</script>
+
+<!-- ============ UI ============ -->
+<script>
+"use strict";
+(function () {
+  const $ = id => document.getElementById(id);
+  const fmtIDR = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
+  const fmtNum = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 });
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  /* ---------- data source state ---------- */
+  let source = "demo";      // demo | csv | paste
+  let csvBars = null;       // parsed from file
+  let lastAnalysis = null;
+  let chartState = null;    // for redraw on resize/theme
+
+  const panes = { demo: $("paneDemo"), csv: $("paneCsv"), paste: $("panePaste") };
+  const segBtns = { demo: $("srcDemo"), csv: $("srcCsv"), paste: $("srcPaste") };
+  function setSource(s) {
+    source = s;
+    for (const k in panes) {
+      panes[k].classList.toggle("hide", k !== s);
+      segBtns[k].classList.toggle("on", k === s);
+    }
+  }
+  segBtns.demo.addEventListener("click", () => setSource("demo"));
+  segBtns.csv.addEventListener("click", () => setSource("csv"));
+  segBtns.paste.addEventListener("click", () => setSource("paste"));
+
+  $("csvFile").addEventListener("change", ev => {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        csvBars = parseCsv(String(reader.result));
+        $("dataStatus").textContent = "✓ " + f.name + " — " + csvBars.length + " bar termuat (" +
+          csvBars[0].date + " → " + csvBars[csvBars.length - 1].date + ").";
+      } catch (e) {
+        csvBars = null;
+        $("dataStatus").textContent = "✗ " + e.message;
+      }
+    };
+    reader.readAsText(f);
+  });
+
+  function getBars() {
+    if (source === "demo") return { bars: makeDemoBars(260), label: ($("demoTicker").value.trim() || "DEMO") + " · data demo (sintetis)", isDemo: true };
+    if (source === "csv") {
+      if (!csvBars) throw new Error("Pilih file CSV yang valid terlebih dahulu.");
+      const name = $("csvFile").files[0] ? $("csvFile").files[0].name.replace(/\.csv$/i, "") : "CSV";
+      return { bars: csvBars, label: name, isDemo: false };
+    }
+    const txt = $("csvText").value;
+    if (!txt.trim()) throw new Error("Tempel isi CSV terlebih dahulu.");
+    return { bars: parseCsv(txt), label: "Data tempel", isDemo: false };
+  }
+
+  /* ---------- analyze ---------- */
+  $("btnAnalyze").addEventListener("click", () => {
+    let data;
+    try { data = getBars(); }
+    catch (e) { $("dataStatus").textContent = "✗ " + e.message; return; }
+    $("dataStatus").textContent = source === "demo"
+      ? "✓ 260 bar demo dibuat. Ingat: bukan data pasar riil."
+      : "✓ " + data.bars.length + " bar siap dianalisis.";
+
+    let ind, tech;
+    try {
+      ind = computeIndicators(data.bars);
+      tech = technicalScore(ind);
+    } catch (e) { $("dataStatus").textContent = "✗ " + e.message; return; }
+
+    const headlines = $("newsText").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const sent = scoreHeadlines(headlines);
+
+    const num = id => { const v = $(id).value.trim(); return v === "" ? null : parseFloat(v); };
+    const fund = scoreFundamentalManual({
+      roe: num("fROE") != null ? num("fROE") / 100 : null,
+      margin: num("fMargin") != null ? num("fMargin") / 100 : null,
+      growth: num("fGrowth") != null ? num("fGrowth") / 100 : null,
+      der: num("fDER"),
+      pe: num("fPER")
+    });
+
+    const verdict = masterScore(fund.score, tech.score, sent.score);
+
+    let risk, riskError = null;
+    try {
+      risk = calculatePositionSize({
+        total_capital: parseFloat($("capital").value),
+        max_risk_pct: parseFloat($("riskPct").value) / 100,
+        entry_price: ind.last_price,
+        atr_value: ind.atr_14,
+        atr_multiplier: parseFloat($("atrK").value),
+        win_rate: parseFloat($("winRate").value) / 100,
+        reward_risk_ratio: parseFloat($("rr").value)
+      });
+    } catch (e) { riskError = e.message; }
+
+    lastAnalysis = {
+      generated_at: new Date().toISOString(),
+      label: data.label, is_demo_data: data.isDemo,
+      signal: verdict.signal, total_score: verdict.total_score,
+      scores: { components: verdict.components, weights: verdict.weights },
+      technical: { indicators: ind, score: tech.score, breakdown: tech.breakdown },
+      sentiment: sent, fundamental: fund,
+      risk_plan: risk || { error: riskError },
+      disclaimer: "Decision support — bukan nasihat keuangan."
+    };
+
+    render(data, ind, tech, sent, fund, verdict, risk, riskError);
+  });
+
+  /* ---------- render ---------- */
+  function render(data, ind, tech, sent, fund, verdict, risk, riskError) {
+    $("heroEmpty").classList.add("hide");
+    $("heroBody").classList.remove("hide");
+    ["chartCard", "techCard", "riskCard", "sentCard"].forEach(id => $(id).classList.remove("hide"));
+
+    $("totalScore").textContent = fmtNum.format(verdict.total_score);
+    const pill = $("signalPill");
+    const sig = verdict.signal;
+    const cls = (sig === "STRONG BUY" || sig === "BUY") ? "good" : sig === "HOLD" ? "warn" : "crit";
+    const icon = cls === "good" ? "▲" : cls === "warn" ? "▬" : "▼";
+    pill.className = "pill " + cls;
+    pill.textContent = icon + " " + sig;
+    $("heroMeta").innerHTML =
+      "<strong>" + escapeHtml(data.label) + "</strong><br>" +
+      "Harga terakhir " + fmtIDR.format(ind.last_price) + " · ATR14 " + fmtNum.format(ind.atr_14) +
+      (data.isDemo ? "<br>⚠ Dihitung dari data demo sintetis." : "");
+
+    setBar("F", verdict.components.fundamental);
+    setBar("T", verdict.components.technical);
+    setBar("S", verdict.components.sentiment);
+
+    $("chartTicker").textContent = data.label;
+    drawCharts(data.bars, ind);
+    fillDataTable(data.bars);
+
+    // indicator grid
+    const items = [
+      ["Harga terakhir", fmtIDR.format(ind.last_price)],
+      ["EMA 20", fmtIDR.format(ind.ema_20)],
+      ["EMA 50", fmtIDR.format(ind.ema_50)],
+      ["EMA 200", fmtIDR.format(ind.ema_200)],
+      ["RSI 14", fmtNum.format(ind.rsi_14)],
+      ["MACD", fmtNum.format(ind.macd)],
+      ["MACD signal", fmtNum.format(ind.macd_signal)],
+      ["ATR 14", fmtNum.format(ind.atr_14)],
+      ["Support", fmtIDR.format(ind.support)],
+      ["Resistance", fmtIDR.format(ind.resistance)]
+    ];
+    $("indGrid").innerHTML = items.map(x =>
+      '<div class="item"><div class="k">' + x[0] + '</div><div class="v">' + x[1] + "</div></div>").join("");
+    $("techBreakdown").textContent =
+      "Skor teknikal " + fmtNum.format(tech.score) + "/100 — tren EMA " + tech.breakdown.trend_ema +
+      "/45 · momentum RSI " + tech.breakdown.momentum_rsi + "/20 · MACD " + tech.breakdown.macd +
+      "/25 · posisi S/R " + tech.breakdown.support_resistance + "/10 · " +
+      ind.data_points + " bar data.";
+    $("techNotes").innerHTML = (tech.notes || []).map(n =>
+      '<div class="warnbox">ℹ️ ' + escapeHtml(n) + "</div>").join("");
+
+    // risk table
+    if (risk) {
+      const rows = [
+        ["Harga entry", fmtIDR.format(risk.entry_price)],
+        ["Stop loss (k × ATR)", fmtIDR.format(risk.stop_loss_price)],
+        ["Take profit (R:R)", fmtIDR.format(risk.take_profit_price)],
+        ["Risiko per lembar", fmtIDR.format(risk.risk_per_share)],
+        ["Lot direkomendasikan", fmtIDR.format(risk.recommended_lots) + " lot (" + fmtIDR.format(risk.recommended_shares) + " lembar)"],
+        ["Total alokasi", "Rp " + fmtIDR.format(risk.total_allocation)],
+        ["Maks. potensi rugi", "Rp " + fmtIDR.format(risk.max_potential_loss)],
+        ["Eksposur portofolio", fmtNum.format(risk.portfolio_exposure_pct) + " %"],
+        ["Fractional Kelly", fmtNum.format(risk.kelly_fraction)]
+      ];
+      $("riskTable").innerHTML = "<tbody>" + rows.map(r =>
+        "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>").join("") + "</tbody>";
+      $("riskWarnings").innerHTML = (risk.warnings || []).map(w =>
+        '<div class="warnbox">⚠ ' + escapeHtml(w) + "</div>").join("");
+    } else {
+      $("riskTable").innerHTML = "<tbody><tr><td>Gagal menghitung</td><td>" + escapeHtml(riskError || "-") + "</td></tr></tbody>";
+      $("riskWarnings").innerHTML = "";
+    }
+
+    // sentiment + fundamental detail
+    let sHtml = "<p class='eyebrow' style='margin-bottom:6px'>Sentimen — " + fmtNum.format(sent.score) +
+      "/100 (" + sent.label + ")</p>";
+    if (sent.details.length) {
+      sHtml += '<div class="tscroll"><table><thead><tr><th>Judul berita</th><th>Polaritas</th></tr></thead><tbody>' +
+        sent.details.map(d => "<tr><td>" + escapeHtml(d.headline) + "</td><td>" +
+          (d.polarity > 0 ? "+" : "") + fmtNum.format(d.polarity) + "</td></tr>").join("") +
+        "</tbody></table></div>";
+    } else {
+      sHtml += "<p class='notebox' style='margin-top:2px'>" + escapeHtml(sent.note || "Tidak ada berita.") + "</p>";
+    }
+    $("sentDetail").innerHTML = sHtml;
+
+    let fHtml = "<p class='eyebrow' style='margin-bottom:6px'>Fundamental — " + fmtNum.format(fund.score) +
+      "/100 (" + (fund.source === "manual_ratios" ? "rasio manual" : "netral") + ")</p>";
+    if (fund.components) {
+      const names = { roe: "ROE", profit_margin: "Margin laba", revenue_growth: "Pertumbuhan", debt_to_equity: "DER", valuation_pe: "Valuasi PER" };
+      fHtml += '<div class="tscroll"><table><thead><tr><th>Komponen</th><th>Poin</th></tr></thead><tbody>' +
+        Object.keys(fund.components).map(k => "<tr><td>" + (names[k] || k) + "</td><td>" + fund.components[k] + "</td></tr>").join("") +
+        "</tbody></table></div>";
+    } else {
+      fHtml += "<p class='notebox' style='margin-top:2px'>" + escapeHtml(fund.note || "") + "</p>";
+    }
+    $("fundDetail").innerHTML = fHtml;
+  }
+
+  function setBar(sfx, val) {
+    $("bar" + sfx).style.width = Math.max(0, Math.min(100, val)) + "%";
+    $("val" + sfx).textContent = fmtNum.format(val);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  /* ---------- charts ---------- */
+  function drawCharts(bars, ind) {
+    const shown = bars.slice(-250);
+    const close = shown.map(b => b.c);
+    const allClose = bars.map(b => b.c);
+    const off = bars.length - shown.length;
+    const e20 = emaArr(allClose, 20).slice(off);
+    const e50 = emaArr(allClose, 50).slice(off);
+    const e200 = emaArr(allClose, 200).slice(off);
+    const rsiAll = rsiArr(allClose, 14).slice(off);
+    chartState = { shown, close, e20, e50, e200, rsiAll, ind };
+    paintPrice();
+    paintRsi();
+  }
+
+  function setupCanvas(canvas, cssH) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || canvas.parentElement.clientWidth || 600;
+    canvas.style.height = cssH + "px";
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h: cssH };
+  }
+
+  function niceTicks(min, max, count) {
+    const span = max - min || 1;
+    const step0 = span / count;
+    const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    let step = mag;
+    for (const m of [1, 2, 2.5, 5, 10]) { if (step0 <= m * mag) { step = m * mag; break; } }
+    const ticks = [];
+    for (let t = Math.ceil(min / step) * step; t <= max + 1e-9; t += step) ticks.push(t);
+    return ticks;
+  }
+
+  function paintPrice() {
+    if (!chartState) return;
+    const { shown, close, e20, e50, e200, ind } = chartState;
+    const canvas = $("priceChart");
+    const { ctx, w, h } = setupCanvas(canvas, 300);
+    const padL = 8, padR = 74, padT = 10, padB = 22;
+    const iw = w - padL - padR, ih = h - padT - padB;
+
+    const seriesAll = close.concat(e20, e50, e200, [ind.support, ind.resistance]);
+    let min = Math.min.apply(null, seriesAll), max = Math.max.apply(null, seriesAll);
+    const pad = (max - min) * 0.06 || 1; min -= pad; max += pad;
+    const X = i => padL + iw * (shown.length === 1 ? 0.5 : i / (shown.length - 1));
+    const Y = v => padT + ih * (1 - (v - min) / (max - min));
+
+    ctx.clearRect(0, 0, w, h);
+
+    // grid + y labels
+    ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+    ctx.fillStyle = css("--muted"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "right";
+    for (const t of niceTicks(min, max, 5)) {
+      const y = Math.round(Y(t)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      ctx.fillText(fmtIDR.format(t), w - padR + 44, y + 3.5);
+    }
+    // x labels (~6)
+    ctx.textAlign = "center";
+    const stepX = Math.max(1, Math.floor(shown.length / 6));
+    for (let i = 0; i < shown.length; i += stepX) {
+      ctx.fillText(shown[i].date.slice(5), X(i), h - 6);
+    }
+
+    // support / resistance dashed
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = css("--muted"); ctx.lineWidth = 1;
+    for (const [v, lbl] of [[ind.support, "S"], [ind.resistance, "R"]]) {
+      const y = Math.round(Y(v)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      ctx.textAlign = "left"; ctx.fillText(lbl + " " + fmtIDR.format(v), padL + 4, y - 4);
+    }
+    ctx.setLineDash([]);
+
+    // series lines (2px)
+    const series = [
+      { d: close, c: css("--s1"), name: "Harga" },
+      { d: e20, c: css("--s2"), name: "EMA20" },
+      { d: e50, c: css("--s3"), name: "EMA50" },
+      { d: e200, c: css("--s4"), name: "EMA200" }
+    ];
+    for (const s of series) {
+      ctx.strokeStyle = s.c; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.beginPath();
+      s.d.forEach((v, i) => { const x = X(i), y = Y(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+      ctx.stroke();
+    }
+    // endpoint dot on price
+    ctx.fillStyle = css("--s1");
+    ctx.beginPath(); ctx.arc(X(close.length - 1), Y(close[close.length - 1]), 3.5, 0, Math.PI * 2); ctx.fill();
+
+    // direct labels at right edge, collision-adjusted
+    const labels = series.map(s => ({ name: s.name, c: s.c, y: Y(s.d[s.d.length - 1]) }))
+      .sort((a, b) => a.y - b.y);
+    for (let i = 1; i < labels.length; i++) {
+      if (labels[i].y - labels[i - 1].y < 13) labels[i].y = labels[i - 1].y + 13;
+    }
+    ctx.textAlign = "left"; ctx.font = "600 11px system-ui, sans-serif";
+    for (const L of labels) { ctx.fillStyle = L.c; ctx.fillText(L.name, w - padR + 4, Math.min(h - padB - 2, Math.max(12, L.y + 3))); }
+
+    // hover
+    canvas.onmousemove = ev => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = ev.clientX - rect.left;
+      const i = Math.max(0, Math.min(shown.length - 1, Math.round((mx - padL) / iw * (shown.length - 1))));
+      paintPrice(); // repaint clean then crosshair
+      const ctx2 = canvas.getContext("2d");
+      const x = Math.round(X(i)) + 0.5;
+      ctx2.strokeStyle = css("--baseline"); ctx2.lineWidth = 1; ctx2.setLineDash([3, 3]);
+      ctx2.beginPath(); ctx2.moveTo(x, padT); ctx2.lineTo(x, h - padB); ctx2.stroke(); ctx2.setLineDash([]);
+      const b = shown[i];
+      const tip = $("priceTip");
+      tip.innerHTML = '<div class="tdate">' + b.date + "</div>" +
+        trow(null, "O / H / L", fmtIDR.format(b.o) + " / " + fmtIDR.format(b.h) + " / " + fmtIDR.format(b.l)) +
+        trow(css("--s1"), "Close", fmtIDR.format(b.c)) +
+        trow(css("--s2"), "EMA20", fmtIDR.format(e20[i])) +
+        trow(css("--s3"), "EMA50", fmtIDR.format(e50[i])) +
+        trow(css("--s4"), "EMA200", fmtIDR.format(e200[i]));
+      tip.style.display = "block";
+      const boxW = tip.offsetWidth || 160;
+      const px = ev.clientX - rect.left;
+      tip.style.left = Math.min(Math.max(4, px + 14), rect.width - boxW - 4) + "px";
+      tip.style.top = "12px";
+    };
+    canvas.onmouseleave = () => { $("priceTip").style.display = "none"; paintPrice(); };
+
+    function trow(color, k, v) {
+      return '<div class="trow"><span class="k">' +
+        (color ? '<span class="sw" style="background:' + color + '"></span>' : "") +
+        k + "</span><span>" + v + "</span></div>";
+    }
+  }
+
+  function paintRsi() {
+    if (!chartState) return;
+    const { shown, rsiAll } = chartState;
+    const canvas = $("rsiChart");
+    const { ctx, w, h } = setupCanvas(canvas, 90);
+    const padL = 8, padR = 74, padT = 6, padB = 6;
+    const iw = w - padL - padR, ih = h - padT - padB;
+    const X = i => padL + iw * (shown.length === 1 ? 0.5 : i / (shown.length - 1));
+    const Y = v => padT + ih * (1 - v / 100);
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = css("--muted"); ctx.textAlign = "left";
+    // 30/70 guides
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+    for (const g of [30, 70]) {
+      const y = Math.round(Y(g)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      ctx.fillText(String(g), w - padR + 6, y + 3.5);
+    }
+    ctx.setLineDash([]);
+    ctx.strokeStyle = css("--s1"); ctx.lineWidth = 2; ctx.beginPath();
+    let started = false;
+    rsiAll.forEach((v, i) => {
+      if (isNaN(v)) return;
+      const x = X(i), y = Y(v);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    const lastV = rsiAll[rsiAll.length - 1];
+    if (!isNaN(lastV)) {
+      ctx.fillStyle = css("--s1");
+      ctx.beginPath(); ctx.arc(X(rsiAll.length - 1), Y(lastV), 3, 0, Math.PI * 2); ctx.fill();
+      ctx.font = "600 11px system-ui, sans-serif";
+      ctx.fillText(fmtNum.format(lastV), w - padR + 30, Y(lastV) + 3.5);
+    }
+  }
+
+  function fillDataTable(bars) {
+    const rows = bars.slice(-30);
+    const allClose = bars.map(b => b.c);
+    const off = bars.length - rows.length;
+    const e20 = emaArr(allClose, 20).slice(off);
+    const e50 = emaArr(allClose, 50).slice(off);
+    const e200 = emaArr(allClose, 200).slice(off);
+    $("dataTable").innerHTML =
+      "<thead><tr><th>Tanggal</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>EMA20</th><th>EMA50</th><th>EMA200</th></tr></thead><tbody>" +
+      rows.map((b, i) =>
+        "<tr><td>" + b.date + "</td><td>" + fmtIDR.format(b.o) + "</td><td>" + fmtIDR.format(b.h) +
+        "</td><td>" + fmtIDR.format(b.l) + "</td><td>" + fmtIDR.format(b.c) +
+        "</td><td>" + fmtIDR.format(e20[i]) + "</td><td>" + fmtIDR.format(e50[i]) +
+        "</td><td>" + fmtIDR.format(e200[i]) + "</td></tr>").join("") + "</tbody>";
+  }
+
+  /* ---------- export ---------- */
+  $("btnSaveJson").addEventListener("click", async () => {
+    if (!lastAnalysis) return;
+    const payload = JSON.stringify(lastAnalysis, null, 2);
+    const name = "aegis-analisis-" + new Date().toISOString().slice(0, 10) + ".json";
+    if (window.claude && window.claude.downloads) {
+      try { await window.claude.downloads.save({ filename: name, data: payload }); }
+      catch (e) { if (e && e.code !== "declined") copyText(payload, "Unduhan tidak tersedia — hasil disalin ke clipboard."); }
+    } else {
+      copyText(payload, "Unduhan tidak tersedia di tampilan ini — hasil JSON disalin ke clipboard.");
+    }
+  });
+
+  $("btnCopy").addEventListener("click", () => {
+    if (!lastAnalysis) return;
+    const a = lastAnalysis;
+    const txt = "AEGIS — " + a.label + (a.is_demo_data ? " (DATA DEMO)" : "") + "\n" +
+      "Sinyal: " + a.signal + " · Skor total " + a.total_score + "/100\n" +
+      "Fundamental " + a.scores.components.fundamental + " · Teknikal " + a.scores.components.technical +
+      " · Sentimen " + a.scores.components.sentiment + "\n" +
+      "Entry " + a.technical.indicators.last_price + " · SL " + (a.risk_plan.stop_loss_price ?? "-") +
+      " · TP " + (a.risk_plan.take_profit_price ?? "-") + " · " + (a.risk_plan.recommended_lots ?? 0) + " lot\n" +
+      "(Decision support — bukan nasihat keuangan)";
+    copyText(txt, "Ringkasan disalin.");
+  });
+
+  function copyText(t, msg) {
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject())
+      .then(() => toast(msg))
+      .catch(() => toast("Tidak bisa menyalin otomatis di tampilan ini."));
+  }
+  function toast(msg) {
+    $("dataStatus").textContent = msg;
+  }
+
+  /* ---------- redraw on resize & theme change ---------- */
+  let rT;
+  window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => { paintPrice(); paintRsi(); }, 120); });
+  new MutationObserver(() => { paintPrice(); paintRsi(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { paintPrice(); paintRsi(); });
+  }
+})();
+</script>

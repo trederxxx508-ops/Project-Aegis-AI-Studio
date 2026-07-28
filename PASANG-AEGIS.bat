@@ -69,10 +69,11 @@ if not exist "%ZIPFILE%" (
 
 REM --- 3. Ekstrak otomatis ----------------------------------------------
 echo  [3/4] Mengekstrak berkas...
-if exist "%TUJUAN%" (
-    echo        Menghapus pemasangan lama...
-    rmdir /s /q "%TUJUAN%" >nul 2>&1
-)
+if not exist "%TUJUAN%" goto :buat_folder
+echo        Menghapus pemasangan lama...
+rmdir /s /q "%TUJUAN%" >nul 2>&1
+
+:buat_folder
 mkdir "%TUJUAN%" >nul 2>&1
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -93,12 +94,7 @@ set "ISI="
 for /d %%d in ("%TUJUAN%\*") do (
     if exist "%%d\requirements.txt" set "ISI=%%d"
 )
-if not defined ISI (
-    echo  [X] Struktur berkas tidak seperti yang diharapkan.
-    echo      Periksa isi folder: %TUJUAN%
-    pause
-    exit /b 1
-)
+if not defined ISI goto :galat_struktur
 
 REM --- 4. Jalankan ------------------------------------------------------
 echo  [4/4] Menyalakan aplikasi...
@@ -117,3 +113,18 @@ timeout /t 4 /nobreak >nul
 
 cd /d "!ISI!"
 call "JALANKAN-WINDOWS.bat"
+exit /b 0
+
+
+REM =====================================================================
+REM  Pesan galat - di luar blok kurung, aman untuk path apa pun.
+REM =====================================================================
+
+:galat_struktur
+echo.
+echo  [X] Struktur berkas tidak seperti yang diharapkan.
+echo      Periksa isi folder:
+echo      "%TUJUAN%"
+echo.
+pause
+exit /b 1

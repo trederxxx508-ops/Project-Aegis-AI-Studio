@@ -83,9 +83,56 @@ def test_batch_structure_is_sound(path):
             )
         depth += line.count("(") - line.count(")")
 
-    assert text.count("(") == text.count(")"), (
-        f"{path.name}: kurung tidak seimbang"
+    # Baris komentar tidak diurai cmd.exe, jadi tidak ikut dihitung
+    kode = [
+        ln for ln in lines
+        if not (ln.strip().upper().startswith("REM") or ln.strip().startswith("::"))
+    ]
+    teks_kode = "\n".join(kode)
+    assert teks_kode.count("(") == teks_kode.count(")"), (
+        f"{path.name}: kurung tidak seimbang pada baris kode"
     )
+
+
+@pytest.mark.parametrize("path", BAT_FILES, ids=lambda p: p.name)
+def test_no_unquoted_variable_expansion_inside_blocks(path):
+    """``%VAR%`` tanpa kutip di dalam blok kurung adalah bom waktu.
+
+    cmd.exe mengurai isi blok ``if ( ... )`` SEBELUM menjalankannya, dan
+    ``%VAR%`` sudah disubstitusi saat itu. Bila nilainya mengandung tanda
+    kurung — misalnya folder "Aegis (1)" hasil unduhan kedua — tanda ``)``
+    menutup blok lebih awal dan skrip mati dengan "was unexpected at this
+    time", bahkan ketika kondisi blok itu tidak terpenuhi.
+
+    Ini benar-benar terjadi pada pengguna, dan tidak terlihat sama sekali
+    saat diuji dengan path biasa.
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    depth = 0
+    offenders = []
+    for i, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.upper().startswith("REM") or stripped.startswith("::"):
+            continue
+        if depth > 0:
+            for m in re.finditer(r'(?<!")%([A-Za-z_][\w]*)%(?!")', line):
+                offenders.append(f"baris {i}: %{m.group(1)}%")
+        depth += line.count("(") - line.count(")")
+
+    assert not offenders, (
+        f"{path.name} memakai ekspansi variabel tanpa kutip di dalam blok "
+        f"kurung: {'; '.join(offenders)}. Pindahkan ke label lewat goto, "
+        "atau bungkus dengan tanda kutip."
+    )
+
+
+def test_error_paths_use_goto_not_blocks():
+    """Percabangan galat harus lewat label, bukan blok kurung."""
+    text = (ROOT / "JALANKAN-WINDOWS.bat").read_text(encoding="utf-8", errors="replace")
+    assert "goto :galat_berkas" in text
+    assert ":galat_berkas" in text
+    assert "goto :galat_python_hilang" in text
+    assert "goto :galat_pip" in text
 
 
 def test_launcher_checks_the_files_it_needs():

@@ -1,280 +1,317 @@
 //@version=5
-// SMC + Astronacci Pro Scalper (Multi-Timeframe)
-// Top-down workflow: directional bias is taken from a higher timeframe and
-// entries are only signalled on the chart timeframe when they agree with it.
-// Combines Smart Money Concepts market structure (swing structure line,
-// BOS/CHoCH, Order Blocks with mitigation, Fair Value Gaps with mitigation,
-// liquidity sweeps) with a Fibonacci "Optimal Trade Entry" zone and
-// Fibonacci-sequence "moon cycle" time marks inspired by Astronacci-style
-// Fibonacci timing analysis. Not affiliated with or endorsed by Astronacci
-// Int'l — independent implementation of the public Fibonacci concepts that
-// methodology is built on, combined with standard SMC structure logic.
+// ═══════════════════════════════════════════════════════════════════════════
+//  SMC + ASTRONACCI PRO SCALPER  —  Multi-Timeframe Reversal Scalping Tool
+// ═══════════════════════════════════════════════════════════════════════════
+//  Top-down workflow:
+//    1. Directional bias is read from a higher timeframe (HTF) market structure.
+//    2. Entries are only signalled on the chart timeframe (LTF) when the LTF
+//       structure shift agrees with that HTF bias.
+//    3. The entry trigger is price tapping the Fibonacci OTE ("golden") zone
+//       of the active structure leg.
+//
+//  SMC toolkit : swing structure (zigzag), BOS / CHoCH, Order Blocks and Fair
+//                Value Gaps with mitigation, liquidity sweeps.
+//  Fibonacci   : 0.618–0.786 OTE zone plus Fibonacci-sequence time marks
+//                projected from each confirmed CHoCH.
+//
+//  Independent implementation of publicly known SMC and Fibonacci concepts.
+//  Not affiliated with or endorsed by Astronacci Int'l.
+//  Technical analysis tool only — not financial advice.
+// ═══════════════════════════════════════════════════════════════════════════
 indicator("SMC + Astronacci Pro Scalper", shorttitle = "SMC+Astro Pro", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
 
-// ───────────────────────────── Inputs ─────────────────────────────
-grpStruct = "Market Structure (SMC)"
-swingLen        = input.int(8, "Swing Pivot Length", minval = 2, group = grpStruct, tooltip = "Higher = smoother structure, fewer/cleaner signals. Use 8-13 on volatile pairs like XAUUSD.")
-maxStructEvents = input.int(5, "Max BOS/CHoCH shown", minval = 1, maxval = 20, group = grpStruct)
-showZigzag      = input.bool(true, "Show Swing Structure Line", group = grpStruct)
-showOB          = input.bool(true, "Show Order Blocks", group = grpStruct)
-obMax           = input.int(2, "Max Active Order Blocks per side", minval = 1, maxval = 10, group = grpStruct)
-showFVG         = input.bool(true, "Show Fair Value Gaps", group = grpStruct)
-fvgMax          = input.int(5, "Max Active FVG per side", minval = 1, maxval = 20, group = grpStruct)
-showSweep       = input.bool(true, "Mark Liquidity Sweeps", group = grpStruct)
-sweepValidBars  = input.int(10, "Sweep Valid For (bars)", minval = 1, maxval = 50, group = grpStruct)
+// ═══════════════════════════════ INPUTS ═══════════════════════════════════
+// Plain (non-`var`) assignments: input `group` requires a const string.
+GRP_HTF    = "1 · Higher Timeframe Bias"
+GRP_STRUCT = "2 · Market Structure (SMC)"
+GRP_ZONE   = "3 · Order Blocks & Fair Value Gaps"
+GRP_FIB    = "4 · Astronacci Fibonacci"
+GRP_SIG    = "5 · Reversal Signal"
+GRP_STYLE  = "6 · Visuals"
 
-grpFib = "Astronacci Fibonacci"
-showFibZone     = input.bool(true, "Show Fibonacci OTE Zone", group = grpFib)
-fibShallow      = input.float(0.618, "Zone Start (shallow)", minval = 0.1, maxval = 0.99, step = 0.001, group = grpFib)
-fibDeep         = input.float(0.786, "Zone End (deep)", minval = 0.1, maxval = 0.99, step = 0.001, group = grpFib)
-showFibTime     = input.bool(true, "Show Fibonacci Moon Cycles", group = grpFib)
-fibTimeCount    = input.int(6, "Number of Fib Time Marks", minval = 3, maxval = 12, group = grpFib)
+useHtfFilter = input.bool(true,  "Only signal in direction of HTF bias", group = GRP_HTF, tooltip = "Blocks counter-trend entries — no BUY signal while the higher-timeframe structure is bearish, and vice versa.")
+htfTimeframe = input.timeframe("60", "HTF Timeframe",                    group = GRP_HTF, tooltip = "Chart M1 → use 15.  Chart M5 → use 60.  Chart M15 → use 240.")
+htfSwingLen  = input.int(8, "HTF Swing Pivot Length", minval = 2, maxval = 50, group = GRP_HTF)
 
-grpHtf = "Multi-Timeframe Bias"
-useHtfFilter = input.bool(true, "Only signal in direction of HTF bias", group = grpHtf, tooltip = "Blocks LTF reversal signals that go against the higher-timeframe trend (e.g. no BUY signal while HTF structure is bearish).")
-htfTimeframe = input.timeframe("60", "HTF Timeframe", group = grpHtf)
-htfSwingLen  = input.int(8, "HTF Swing Pivot Length", minval = 2, group = grpHtf)
+swingLen        = input.int(8, "LTF Swing Pivot Length", minval = 2, maxval = 50, group = GRP_STRUCT, tooltip = "Higher = smoother structure and fewer signals. Use 8–13 on volatile symbols such as XAUUSD.")
+maxStructEvents = input.int(5, "Max BOS / CHoCH kept on chart", minval = 1, maxval = 20, group = GRP_STRUCT)
+showZigzag      = input.bool(true, "Show swing structure line",           group = GRP_STRUCT)
+showSweep       = input.bool(true, "Mark liquidity sweeps",               group = GRP_STRUCT)
+sweepValidBars  = input.int(10, "Sweep stays valid for (bars)", minval = 1, maxval = 50, group = GRP_STRUCT)
 
-grpSig = "Reversal Signal"
-requireFibConfluence   = input.bool(true, "Require price inside Fib OTE zone", group = grpSig)
-requireSweepConfluence = input.bool(false, "Require recent liquidity sweep", group = grpSig)
-showTable       = input.bool(true, "Show Info Dashboard", group = grpSig)
-showBiasBg      = input.bool(true, "Tint Background by Bias", group = grpSig)
+showOB   = input.bool(true, "Show Order Blocks",                  group = GRP_ZONE)
+obMax    = input.int(2, "Max active Order Blocks per side", minval = 1, maxval = 10, group = GRP_ZONE)
+obLookbk = input.int(15, "Order Block search depth (bars)", minval = 3, maxval = 50, group = GRP_ZONE)
+showFVG  = input.bool(true, "Show Fair Value Gaps",               group = GRP_ZONE)
+fvgMax   = input.int(5, "Max active FVG per side", minval = 1, maxval = 20, group = GRP_ZONE)
 
-// ───────────────────────────── Colors ─────────────────────────────
-bullColor     = color.new(color.teal, 0)
-bearColor     = color.new(color.red, 0)
-obBullColor   = color.new(color.teal, 88)
-obBearColor   = color.new(color.red, 88)
-fvgBullColor  = color.new(#2962FF, 88)
-fvgBearColor  = color.new(#FF6D00, 88)
-fibZoneBull   = color.new(#00BCD4, 78)
-fibZoneBear   = color.new(#FF9800, 78)
-zigzagColor   = color.new(color.gray, 40)
-timeLineColor = color.new(color.gray, 60)
-sweepColor    = color.new(color.purple, 0)
+showFibZone  = input.bool(true, "Show Fibonacci OTE zone",                       group = GRP_FIB)
+fibShallow   = input.float(0.618, "Zone start (shallow)", minval = 0.1, maxval = 0.99, step = 0.001, group = GRP_FIB)
+fibDeep      = input.float(0.786, "Zone end (deep)",      minval = 0.1, maxval = 0.99, step = 0.001, group = GRP_FIB)
+showFibTime  = input.bool(true, "Show Fibonacci time marks (moon cycles)",       group = GRP_FIB)
+fibTimeCount = input.int(6, "Number of time marks", minval = 3, maxval = 12,     group = GRP_FIB)
 
-// ───────────────────────── Market structure ─────────────────────────
-phVal = ta.pivothigh(high, swingLen, swingLen)
-plVal = ta.pivotlow(low, swingLen, swingLen)
+requireFib   = input.bool(true,  "Require price inside Fib OTE zone",  group = GRP_SIG)
+requireSweep = input.bool(false, "Require recent liquidity sweep",     group = GRP_SIG)
 
-var float refHigh       = na
-var float refLow        = na
-var bool  refHighBroken = false
-var bool  refLowBroken  = false
-var string bias         = "none"
-var string lastEvent    = "—"
+showTable  = input.bool(true, "Show info dashboard",       group = GRP_STYLE)
+showBiasBg = input.bool(true, "Tint background by HTF bias", group = GRP_STYLE)
 
-// Swing structure line — connects each newly confirmed swing point in
-// chronological order so the overall structure shape is visible at a glance.
-var float zzPrevPrice = na
-var int   zzPrevBar   = na
-var array<line> zigzagLines = array.new<line>(0)
+// ═══════════════════════════════ PALETTE ══════════════════════════════════
+C_BULL     = #089981
+C_BEAR     = #F23645
+C_SWEEP    = #9C27B0
+C_FVG_BULL = #2962FF
+C_FVG_BEAR = #FF6D00
+C_ZIGZAG   = color.new(color.gray, 40)
+C_TIME     = color.new(color.gray, 60)
 
-if not na(phVal)
-    newHBar = bar_index - swingLen
-    if showZigzag and not na(zzPrevPrice)
-        zln = line.new(zzPrevBar, zzPrevPrice, newHBar, phVal, color = zigzagColor, width = 1)
-        array.push(zigzagLines, zln)
-        if array.size(zigzagLines) > 50
-            line.delete(array.shift(zigzagLines))
-    zzPrevPrice := phVal
-    zzPrevBar   := newHBar
-    refHigh := phVal
-    refHighBroken := false
+// Pre-computed so `ta.*` is never called inside a conditional block.
+atr50 = ta.atr(50)
 
-if not na(plVal)
-    newLBar = bar_index - swingLen
-    if showZigzag and not na(zzPrevPrice)
-        zln2 = line.new(zzPrevBar, zzPrevPrice, newLBar, plVal, color = zigzagColor, width = 1)
-        array.push(zigzagLines, zln2)
-        if array.size(zigzagLines) > 50
-            line.delete(array.shift(zigzagLines))
-    zzPrevPrice := plVal
-    zzPrevBar   := newLBar
-    refLow := plVal
-    refLowBroken := false
+// ═══════════════════════ LTF MARKET STRUCTURE (SMC) ═══════════════════════
+pivotHigh = ta.pivothigh(high, swingLen, swingLen)
+pivotLow  = ta.pivotlow(low,  swingLen, swingLen)
 
-bullBreak = not refHighBroken and not na(refHigh) and ta.crossover(close, refHigh)
-bearBreak = not refLowBroken  and not na(refLow)  and ta.crossunder(close, refLow)
+var float refHigh    = na      // last unbroken swing high
+var int   refHighBar = na
+var bool  refHighUsed = false
+var float refLow     = na      // last unbroken swing low
+var int   refLowBar  = na
+var bool  refLowUsed = false
+var string ltfBias   = "none"
+var string lastEvent = "—"
 
-bullChoch = bullBreak and bias == "bearish"
-bearChoch = bearBreak and bias == "bullish"
+// ── Swing structure line: alternating zigzag between confirmed pivots ──
+var string zzLastType  = "none"
+var float  zzLastPrice = na
+var int    zzLastBar   = na
+var line   zzLastLine  = na
+var array<line> zzLines = array.new<line>(0)
 
-// BOS/CHoCH markers — capped history so the chart never fills up with stale labels.
+zzPush(l) =>
+    array.push(zzLines, l)
+    if array.size(zzLines) > 50
+        line.delete(array.shift(zzLines))
+
+// ── New swing high ──
+if not na(pivotHigh)
+    phBar = bar_index - swingLen
+    if showZigzag
+        if zzLastType == "high"
+            // Same-type pivot: keep only the more extreme one.
+            if pivotHigh > zzLastPrice
+                zzLastPrice := pivotHigh
+                zzLastBar   := phBar
+                if not na(zzLastLine)
+                    line.set_xy2(zzLastLine, phBar, pivotHigh)
+        else if zzLastType == "low"
+            zzLastLine := line.new(zzLastBar, zzLastPrice, phBar, pivotHigh, color = C_ZIGZAG, width = 1)
+            zzPush(zzLastLine)
+            zzLastType  := "high"
+            zzLastPrice := pivotHigh
+            zzLastBar   := phBar
+        else
+            zzLastType  := "high"
+            zzLastPrice := pivotHigh
+            zzLastBar   := phBar
+    refHigh     := pivotHigh
+    refHighBar  := phBar
+    refHighUsed := false
+
+// ── New swing low ──
+if not na(pivotLow)
+    plBar = bar_index - swingLen
+    if showZigzag
+        if zzLastType == "low"
+            if pivotLow < zzLastPrice
+                zzLastPrice := pivotLow
+                zzLastBar   := plBar
+                if not na(zzLastLine)
+                    line.set_xy2(zzLastLine, plBar, pivotLow)
+        else if zzLastType == "high"
+            zzLastLine := line.new(zzLastBar, zzLastPrice, plBar, pivotLow, color = C_ZIGZAG, width = 1)
+            zzPush(zzLastLine)
+            zzLastType  := "low"
+            zzLastPrice := pivotLow
+            zzLastBar   := plBar
+        else
+            zzLastType  := "low"
+            zzLastPrice := pivotLow
+            zzLastBar   := plBar
+    refLow     := pivotLow
+    refLowBar  := plBar
+    refLowUsed := false
+
+// ── Structure breaks ──
+bullBreak = not refHighUsed and not na(refHigh) and ta.crossover(close, refHigh)
+bearBreak = not refLowUsed  and not na(refLow)  and ta.crossunder(close, refLow)
+
+bullChoch = bullBreak and ltfBias == "bearish"
+bearChoch = bearBreak and ltfBias == "bullish"
+
+// ── BOS / CHoCH markers, capped so the chart never fills with stale drawings ──
 var array<line>  structLines  = array.new<line>(0)
 var array<label> structLabels = array.new<label>(0)
 
-f_addStructEvent(fromBar, fromPrice, txt, col) =>
-    ln = line.new(fromBar, fromPrice, bar_index, fromPrice, color = col, width = 1, style = line.style_dashed)
-    lb = label.new(bar_index, fromPrice, txt, style = label.style_none, textcolor = col, size = size.small)
-    array.push(structLines, ln)
+drawStructEvent(fromBar, atPrice, txt, col, above) =>
+    ln = line.new(fromBar, atPrice, bar_index, atPrice, color = col, width = 1, style = line.style_dashed)
+    lb = label.new(bar_index, atPrice, txt, style = above ? label.style_label_down : label.style_label_up, color = color.new(col, 100), textcolor = col, size = size.small)
+    array.push(structLines,  ln)
     array.push(structLabels, lb)
     if array.size(structLines) > maxStructEvents
         line.delete(array.shift(structLines))
         label.delete(array.shift(structLabels))
 
 if bullBreak
-    refHighBroken := true
-    bias := "bullish"
+    refHighUsed := true
+    ltfBias   := "bullish"
     lastEvent := bullChoch ? "CHoCH ↑" : "BOS ↑"
-    f_addStructEvent(bar_index - swingLen, refHigh, bullChoch ? "CHoCH" : "BOS", bullColor)
+    drawStructEvent(refHighBar, refHigh, bullChoch ? "CHoCH" : "BOS", C_BULL, true)
 
 if bearBreak
-    refLowBroken := true
-    bias := "bearish"
+    refLowUsed := true
+    ltfBias   := "bearish"
     lastEvent := bearChoch ? "CHoCH ↓" : "BOS ↓"
-    f_addStructEvent(bar_index - swingLen, refLow, bearChoch ? "CHoCH" : "BOS", bearColor)
+    drawStructEvent(refLowBar, refLow, bearChoch ? "CHoCH" : "BOS", C_BEAR, false)
 
-// ───────────────────────── Liquidity sweeps ─────────────────────────
-// Plotted as small triangle markers (not persistent labels) to stay light on the chart.
-bullishSweep = showSweep and not na(refLow)  and low  < refLow  and close > refLow  and close > open
-bearishSweep = showSweep and not na(refHigh) and high > refHigh and close < refHigh and close < open
+// ═══════════════════════════ LIQUIDITY SWEEPS ═════════════════════════════
+// Wick takes out a swing point, body closes back inside → stop hunt.
+bullSweep = showSweep and not na(refLow)  and low  < refLow  and close > refLow  and close > open
+bearSweep = showSweep and not na(refHigh) and high > refHigh and close < refHigh and close < open
 
 var int lastBullSweepBar = na
 var int lastBearSweepBar = na
-if bullishSweep
+if bullSweep
     lastBullSweepBar := bar_index
-if bearishSweep
+if bearSweep
     lastBearSweepBar := bar_index
 
-bullishSweepRecent = not na(lastBullSweepBar) and (bar_index - lastBullSweepBar) <= sweepValidBars
-bearishSweepRecent = not na(lastBearSweepBar) and (bar_index - lastBearSweepBar) <= sweepValidBars
+bullSweepRecent = not na(lastBullSweepBar) and bar_index - lastBullSweepBar <= sweepValidBars
+bearSweepRecent = not na(lastBearSweepBar) and bar_index - lastBearSweepBar <= sweepValidBars
 
-plotshape(bullishSweep, title = "Bullish Liquidity Sweep", style = shape.triangleup, location = location.belowbar, color = sweepColor, size = size.tiny)
-plotshape(bearishSweep, title = "Bearish Liquidity Sweep", style = shape.triangledown, location = location.abovebar, color = sweepColor, size = size.tiny)
+plotshape(bullSweep, title = "Bullish liquidity sweep", style = shape.triangleup,   location = location.belowbar, color = C_SWEEP, size = size.tiny)
+plotshape(bearSweep, title = "Bearish liquidity sweep", style = shape.triangledown, location = location.abovebar, color = C_SWEEP, size = size.tiny)
 
-// ───────────────────────── Order Blocks (with mitigation) ─────────────────────────
-var array<box>   bullOBs      = array.new<box>(0)
-var array<float> bullOBLevel  = array.new<float>(0)
-var array<box>   bearOBs      = array.new<box>(0)
-var array<float> bearOBLevel  = array.new<float>(0)
+// ═════════════════════ ORDER BLOCKS (with mitigation) ═════════════════════
+var array<box>   obBullBox = array.new<box>(0)
+var array<float> obBullLvl = array.new<float>(0)
+var array<box>   obBearBox = array.new<box>(0)
+var array<float> obBearLvl = array.new<float>(0)
 
 if showOB
-    if array.size(bullOBs) > 0
-        for i = array.size(bullOBs) - 1 to 0
-            bx  = array.get(bullOBs, i)
-            lvl = array.get(bullOBLevel, i)
-            if close < lvl
-                box.delete(bx)
-                array.remove(bullOBs, i)
-                array.remove(bullOBLevel, i)
+    // Extend live blocks; delete the ones price has traded through.
+    if array.size(obBullBox) > 0
+        for i = array.size(obBullBox) - 1 to 0
+            if close < array.get(obBullLvl, i)
+                box.delete(array.get(obBullBox, i))
+                array.remove(obBullBox, i)
+                array.remove(obBullLvl, i)
             else
-                box.set_right(bx, bar_index + 3)
-    if array.size(bearOBs) > 0
-        for i = array.size(bearOBs) - 1 to 0
-            bx  = array.get(bearOBs, i)
-            lvl = array.get(bearOBLevel, i)
-            if close > lvl
-                box.delete(bx)
-                array.remove(bearOBs, i)
-                array.remove(bearOBLevel, i)
+                box.set_right(array.get(obBullBox, i), bar_index + 3)
+    if array.size(obBearBox) > 0
+        for i = array.size(obBearBox) - 1 to 0
+            if close > array.get(obBearLvl, i)
+                box.delete(array.get(obBearBox, i))
+                array.remove(obBearBox, i)
+                array.remove(obBearLvl, i)
             else
-                box.set_right(bx, bar_index + 3)
+                box.set_right(array.get(obBearBox, i), bar_index + 3)
 
-if showOB and bullBreak
-    for i = 1 to 15
-        if close[i] < open[i]
-            bx = box.new(bar_index - i, high[i], bar_index + 3, low[i], border_color = color.teal, bgcolor = obBullColor, border_width = 1)
-            array.push(bullOBs, bx)
-            array.push(bullOBLevel, low[i])
-            if array.size(bullOBs) > obMax
-                box.delete(array.shift(bullOBs))
-                array.shift(bullOBLevel)
-            break
+    // Bullish OB = last down candle before an upward break.
+    if bullBreak
+        for i = 1 to obLookbk
+            if close[i] < open[i]
+                array.push(obBullBox, box.new(bar_index - i, high[i], bar_index + 3, low[i], border_color = C_BULL, bgcolor = color.new(C_BULL, 88), border_width = 1))
+                array.push(obBullLvl, low[i])
+                if array.size(obBullBox) > obMax
+                    box.delete(array.shift(obBullBox))
+                    array.shift(obBullLvl)
+                break
+    // Bearish OB = last up candle before a downward break.
+    if bearBreak
+        for i = 1 to obLookbk
+            if close[i] > open[i]
+                array.push(obBearBox, box.new(bar_index - i, high[i], bar_index + 3, low[i], border_color = C_BEAR, bgcolor = color.new(C_BEAR, 88), border_width = 1))
+                array.push(obBearLvl, high[i])
+                if array.size(obBearBox) > obMax
+                    box.delete(array.shift(obBearBox))
+                    array.shift(obBearLvl)
+                break
 
-if showOB and bearBreak
-    for i = 1 to 15
-        if close[i] > open[i]
-            bx = box.new(bar_index - i, high[i], bar_index + 3, low[i], border_color = color.red, bgcolor = obBearColor, border_width = 1)
-            array.push(bearOBs, bx)
-            array.push(bearOBLevel, high[i])
-            if array.size(bearOBs) > obMax
-                box.delete(array.shift(bearOBs))
-                array.shift(bearOBLevel)
-            break
-
-// ───────────────────────── Fair Value Gaps (with mitigation) ─────────────────────────
-var array<box>   fvgBullBoxes = array.new<box>(0)
-var array<float> fvgBullLevel = array.new<float>(0)
-var array<box>   fvgBearBoxes = array.new<box>(0)
-var array<float> fvgBearLevel = array.new<float>(0)
+// ═══════════════════ FAIR VALUE GAPS (with mitigation) ════════════════════
+var array<box>   fvgBullBox = array.new<box>(0)
+var array<float> fvgBullLvl = array.new<float>(0)
+var array<box>   fvgBearBox = array.new<box>(0)
+var array<float> fvgBearLvl = array.new<float>(0)
 
 if showFVG
-    if array.size(fvgBullBoxes) > 0
-        for i = array.size(fvgBullBoxes) - 1 to 0
-            bx  = array.get(fvgBullBoxes, i)
-            lvl = array.get(fvgBullLevel, i)
-            if close < lvl
-                box.delete(bx)
-                array.remove(fvgBullBoxes, i)
-                array.remove(fvgBullLevel, i)
+    if array.size(fvgBullBox) > 0
+        for i = array.size(fvgBullBox) - 1 to 0
+            if close < array.get(fvgBullLvl, i)
+                box.delete(array.get(fvgBullBox, i))
+                array.remove(fvgBullBox, i)
+                array.remove(fvgBullLvl, i)
             else
-                box.set_right(bx, bar_index + 3)
-    if array.size(fvgBearBoxes) > 0
-        for i = array.size(fvgBearBoxes) - 1 to 0
-            bx  = array.get(fvgBearBoxes, i)
-            lvl = array.get(fvgBearLevel, i)
-            if close > lvl
-                box.delete(bx)
-                array.remove(fvgBearBoxes, i)
-                array.remove(fvgBearLevel, i)
+                box.set_right(array.get(fvgBullBox, i), bar_index + 3)
+    if array.size(fvgBearBox) > 0
+        for i = array.size(fvgBearBox) - 1 to 0
+            if close > array.get(fvgBearLvl, i)
+                box.delete(array.get(fvgBearBox, i))
+                array.remove(fvgBearBox, i)
+                array.remove(fvgBearLvl, i)
             else
-                box.set_right(bx, bar_index + 3)
+                box.set_right(array.get(fvgBearBox, i), bar_index + 3)
 
-    bullFVG = low > high[2]
-    bearFVG = high < low[2]
-    if bullFVG
-        bx = box.new(bar_index - 2, high[2], bar_index + 3, low, border_color = #2962FF, bgcolor = fvgBullColor, border_width = 1)
-        array.push(fvgBullBoxes, bx)
-        array.push(fvgBullLevel, high[2])
-        if array.size(fvgBullBoxes) > fvgMax
-            box.delete(array.shift(fvgBullBoxes))
-            array.shift(fvgBullLevel)
-    if bearFVG
-        bx = box.new(bar_index - 2, low[2], bar_index + 3, high, border_color = #FF6D00, bgcolor = fvgBearColor, border_width = 1)
-        array.push(fvgBearBoxes, bx)
-        array.push(fvgBearLevel, low[2])
-        if array.size(fvgBearBoxes) > fvgMax
-            box.delete(array.shift(fvgBearBoxes))
-            array.shift(fvgBearLevel)
+    if low > high[2]
+        array.push(fvgBullBox, box.new(bar_index - 2, high[2], bar_index + 3, low, border_color = C_FVG_BULL, bgcolor = color.new(C_FVG_BULL, 88), border_width = 1))
+        array.push(fvgBullLvl, high[2])
+        if array.size(fvgBullBox) > fvgMax
+            box.delete(array.shift(fvgBullBox))
+            array.shift(fvgBullLvl)
+    if high < low[2]
+        array.push(fvgBearBox, box.new(bar_index - 2, low[2], bar_index + 3, high, border_color = C_FVG_BEAR, bgcolor = color.new(C_FVG_BEAR, 88), border_width = 1))
+        array.push(fvgBearLvl, low[2])
+        if array.size(fvgBearBox) > fvgMax
+            box.delete(array.shift(fvgBearBox))
+            array.shift(fvgBearLvl)
 
-// ───────────────────── Astronacci Fibonacci OTE zone ─────────────────────
+// ═══════════════════ ASTRONACCI FIBONACCI — OTE ZONE ══════════════════════
+// The active impulse leg is anchored at the broken swing and extended by every
+// new extreme, so the retracement zone follows the live structure.
 var float legLow  = na
 var float legHigh = na
-var box fibBox = na
+var box   fibBox  = na
 
 if bullBreak
     legLow  := refLow
     legHigh := high
-else if bias == "bullish"
+else if ltfBias == "bullish"
     legHigh := math.max(nz(legHigh, high), high)
 
 if bearBreak
     legHigh := refHigh
     legLow  := low
-else if bias == "bearish"
+else if ltfBias == "bearish"
     legLow := math.min(nz(legLow, low), low)
 
-legRange = (not na(legHigh) and not na(legLow)) ? legHigh - legLow : na
+legRange = not na(legHigh) and not na(legLow) ? legHigh - legLow : na
 
-zoneTop    = bias == "bullish" ? legHigh - legRange * fibShallow : bias == "bearish" ? legLow + legRange * fibDeep    : na
-zoneBottom = bias == "bullish" ? legHigh - legRange * fibDeep    : bias == "bearish" ? legLow + legRange * fibShallow : na
+zoneTop = ltfBias == "bullish" ? legHigh - legRange * fibShallow : ltfBias == "bearish" ? legLow + legRange * fibDeep : na
+zoneBot = ltfBias == "bullish" ? legHigh - legRange * fibDeep    : ltfBias == "bearish" ? legLow + legRange * fibShallow : na
 
-inZone = not na(zoneTop) and not na(zoneBottom) and close <= zoneTop and close >= zoneBottom
+inZone = not na(zoneTop) and not na(zoneBot) and close <= zoneTop and close >= zoneBot
 
-if showFibZone and not na(zoneTop) and not na(zoneBottom)
+if showFibZone and not na(zoneTop) and not na(zoneBot)
     box.delete(fibBox)
-    fibBox := box.new(bar_index - 1, zoneTop, bar_index + 10, zoneBottom, border_color = bias == "bullish" ? color.teal : color.orange, bgcolor = bias == "bullish" ? fibZoneBull : fibZoneBear, border_width = 2, text = "Golden Zone " + str.tostring(fibShallow, "#.###") + "–" + str.tostring(fibDeep, "#.###"), text_color = color.white, text_size = size.small)
+    fibBox := box.new(bar_index - 1, zoneTop, bar_index + 10, zoneBot, border_color = ltfBias == "bullish" ? C_BULL : C_FVG_BEAR, bgcolor = color.new(ltfBias == "bullish" ? C_BULL : C_FVG_BEAR, 80), border_width = 2, text = "Golden Zone " + str.tostring(fibShallow, "#.###") + "–" + str.tostring(fibDeep, "#.###"), text_color = color.gray, text_size = size.small)
 
-// ───────────────────── Fibonacci "moon cycle" time marks ─────────────────────
-// Fibonacci-sequence bar counts projected from each confirmed CHoCH, marked
-// with moon-phase glyphs as a nod to Astronacci-style Fibonacci time cycles.
-var int fibTimeAnchor = na
+// ═════════════ ASTRONACCI FIBONACCI — TIME MARKS (MOON CYCLES) ════════════
+// Fibonacci bar counts projected forward from each confirmed CHoCH.
 var array<line>   fibTimeLines  = array.new<line>(0)
 var array<label>  fibTimeLabels = array.new<label>(0)
-var array<int>    fibSeq        = array.from(1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233)
-var array<string> moonPhases    = array.from("🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘")
+var array<int>    FIB_SEQ    = array.from(1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233)
+var array<string> MOON_PHASE = array.from("🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘")
 
 if showFibTime and (bullChoch or bearChoch)
     for ln in fibTimeLines
@@ -283,86 +320,80 @@ if showFibTime and (bullChoch or bearChoch)
         label.delete(lb)
     array.clear(fibTimeLines)
     array.clear(fibTimeLabels)
-    fibTimeAnchor := bar_index
-    atrRef = ta.atr(50)
     for i = 0 to fibTimeCount - 1
-        fibNum = array.get(fibSeq, i)
-        tgt = fibTimeAnchor + fibNum
-        phase = array.get(moonPhases, i % 8)
-        newLine = line.new(tgt, high, tgt, high + atrRef * 2, xloc.bar_index, extend = extend.none, color = timeLineColor, style = line.style_dotted, width = 1)
-        newLabel = label.new(tgt, high + atrRef * 2.5, phase, style = label.style_none, size = size.small)
-        array.push(fibTimeLines, newLine)
-        array.push(fibTimeLabels, newLabel)
+        tgtBar = bar_index + array.get(FIB_SEQ, i)
+        array.push(fibTimeLines,  line.new(tgtBar, high, tgtBar, high + atr50 * 2, xloc.bar_index, extend = extend.none, color = C_TIME, style = line.style_dotted, width = 1))
+        array.push(fibTimeLabels, label.new(tgtBar, high + atr50 * 2.5, array.get(MOON_PHASE, i % 8), style = label.style_none, size = size.small))
 
-// ───────────────── HTF bias (top-down: bias from HTF, entry on LTF) ─────────────────
-// Same BOS/CHoCH structure logic, evaluated on the higher timeframe.
-// 1 = bullish structure, -1 = bearish structure, 0 = undefined.
-f_htfBias(len) =>
-    ph = ta.pivothigh(high, len, len)
-    pl = ta.pivotlow(low, len, len)
-    var float hRef = na
-    var float lRef = na
+// ══════════ HIGHER TIMEFRAME BIAS — top-down directional filter ═══════════
+// Identical BOS/CHoCH logic evaluated on the HTF.  1 = bullish, -1 = bearish.
+htfStructureBias() =>
+    ph = ta.pivothigh(high, htfSwingLen, htfSwingLen)
+    pl = ta.pivotlow(low,  htfSwingLen, htfSwingLen)
+    var float hRef  = na
+    var float lRef  = na
     var bool  hUsed = false
     var bool  lUsed = false
-    var int   b = 0
+    var int   b     = 0
     if not na(ph)
-        hRef := ph
+        hRef  := ph
         hUsed := false
     if not na(pl)
-        lRef := pl
+        lRef  := pl
         lUsed := false
-    if not hUsed and not na(hRef) and ta.crossover(close, hRef)
+    brokeUp   = not hUsed and not na(hRef) and ta.crossover(close, hRef)
+    brokeDown = not lUsed and not na(lRef) and ta.crossunder(close, lRef)
+    if brokeUp
         hUsed := true
         b := 1
-    if not lUsed and not na(lRef) and ta.crossunder(close, lRef)
+    if brokeDown
         lUsed := true
         b := -1
-    b
+    // Return the previous HTF bar's value: combined with lookahead_on this
+    // always resolves to the last *closed* HTF bar, so the bias never repaints.
+    b[1]
 
-// [1] + lookahead_on returns the last *closed* HTF value, so the bias does not repaint.
-htfBiasRaw = request.security(syminfo.tickerid, htfTimeframe, f_htfBias(htfSwingLen)[1], lookahead = barmerge.lookahead_on)
-htfBias = nz(htfBiasRaw, 0)
+htfBias = nz(request.security(syminfo.tickerid, htfTimeframe, htfStructureBias(), lookahead = barmerge.lookahead_on), 0)
 
-htfAllowsLong  = not useHtfFilter or htfBias == 1
+htfAllowsLong  = not useHtfFilter or htfBias ==  1
 htfAllowsShort = not useHtfFilter or htfBias == -1
 
-// ───────────────────────── Reversal signal ─────────────────────────
-fibOkUp     = not requireFibConfluence or inZone
-fibOkDown   = not requireFibConfluence or inZone
-sweepOkUp   = not requireSweepConfluence or bullishSweepRecent
-sweepOkDown = not requireSweepConfluence or bearishSweepRecent
+// ═══════════════════════════ REVERSAL SIGNALS ═════════════════════════════
+fibOk       = not requireFib   or inZone
+sweepOkUp   = not requireSweep or bullSweepRecent
+sweepOkDown = not requireSweep or bearSweepRecent
 
-enterZoneUp   = bias == "bullish" and inZone and not inZone[1]
-enterZoneDown = bias == "bearish" and inZone and not inZone[1]
+tapZoneUp   = ltfBias == "bullish" and inZone and not inZone[1]
+tapZoneDown = ltfBias == "bearish" and inZone and not inZone[1]
 
-reversalUp   = enterZoneUp   and fibOkUp   and sweepOkUp   and htfAllowsLong
-reversalDown = enterZoneDown and fibOkDown and sweepOkDown and htfAllowsShort
+signalLong  = tapZoneUp   and fibOk and sweepOkUp   and htfAllowsLong
+signalShort = tapZoneDown and fibOk and sweepOkDown and htfAllowsShort
 
-plotshape(reversalUp, title = "Bullish Reversal", style = shape.triangleup, location = location.belowbar, color = bullColor, size = size.normal)
-plotshape(reversalDown, title = "Bearish Reversal", style = shape.triangledown, location = location.abovebar, color = bearColor, size = size.normal)
+plotshape(signalLong,  title = "Bullish reversal", style = shape.triangleup,   location = location.belowbar, color = C_BULL, size = size.normal)
+plotshape(signalShort, title = "Bearish reversal", style = shape.triangledown, location = location.abovebar, color = C_BEAR, size = size.normal)
 
-alertcondition(reversalUp, title = "Bullish SMC+Astronacci Reversal", message = "{{ticker}} {{interval}}: Bullish reversal — HTF bias bullish + LTF structure shift into Fibonacci OTE zone")
-alertcondition(reversalDown, title = "Bearish SMC+Astronacci Reversal", message = "{{ticker}} {{interval}}: Bearish reversal — HTF bias bearish + LTF structure shift into Fibonacci OTE zone")
+alertcondition(signalLong,  title = "Bullish SMC+Astronacci reversal", message = "{{ticker}} {{interval}}: BUY setup — HTF bias bullish + LTF structure shift into Fibonacci OTE zone")
+alertcondition(signalShort, title = "Bearish SMC+Astronacci reversal", message = "{{ticker}} {{interval}}: SELL setup — HTF bias bearish + LTF structure shift into Fibonacci OTE zone")
 
-// Background reflects HTF bias — the dominant context you trade with, not against.
-bgcolor(showBiasBg ? (htfBias == 1 ? color.new(color.teal, 95) : htfBias == -1 ? color.new(color.red, 95) : na) : na, title = "HTF Bias Background")
+// Background reflects the HTF context you should be trading with, not against.
+bgcolor(showBiasBg ? (htfBias == 1 ? color.new(C_BULL, 95) : htfBias == -1 ? color.new(C_BEAR, 95) : na) : na, title = "HTF bias background")
 
-// ───────────────────────────── Dashboard ─────────────────────────────
-aligned = (htfBias == 1 and bias == "bullish") or (htfBias == -1 and bias == "bearish")
+// ════════════════════════════ INFO DASHBOARD ══════════════════════════════
+aligned = (htfBias == 1 and ltfBias == "bullish") or (htfBias == -1 and ltfBias == "bearish")
 
-var table infoTable = table.new(position.top_right, 2, 7, border_width = 1)
+var table dash = table.new(position.top_right, 2, 7, border_width = 1)
 if showTable and barstate.islast
-    table.cell(infoTable, 0, 0, "SMC + Astronacci", bgcolor = color.new(color.gray, 70), text_color = color.white)
-    table.cell(infoTable, 1, 0, "Pro Scalper", bgcolor = color.new(color.gray, 70), text_color = color.white)
-    table.cell(infoTable, 0, 1, "HTF Bias (" + htfTimeframe + ")")
-    table.cell(infoTable, 1, 1, htfBias == 1 ? "Bullish ▲" : htfBias == -1 ? "Bearish ▼" : "Neutral", text_color = htfBias == 1 ? color.teal : htfBias == -1 ? color.red : color.gray)
-    table.cell(infoTable, 0, 2, "LTF Bias")
-    table.cell(infoTable, 1, 2, bias == "bullish" ? "Bullish ▲" : bias == "bearish" ? "Bearish ▼" : "Neutral", text_color = bias == "bullish" ? color.teal : bias == "bearish" ? color.red : color.gray)
-    table.cell(infoTable, 0, 3, "Alignment")
-    table.cell(infoTable, 1, 3, aligned ? "Aligned ✔" : "Counter-trend ✖", text_color = aligned ? color.teal : color.orange)
-    table.cell(infoTable, 0, 4, "Last Event")
-    table.cell(infoTable, 1, 4, lastEvent)
-    table.cell(infoTable, 0, 5, "Fib OTE Zone")
-    table.cell(infoTable, 1, 5, inZone ? "Price Inside" : "Outside")
-    table.cell(infoTable, 0, 6, "Liquidity Sweep")
-    table.cell(infoTable, 1, 6, bullishSweepRecent ? "Bullish" : bearishSweepRecent ? "Bearish" : "None")
+    table.cell(dash, 0, 0, "SMC + Astronacci", bgcolor = color.new(color.gray, 70), text_color = color.white)
+    table.cell(dash, 1, 0, "Pro Scalper",      bgcolor = color.new(color.gray, 70), text_color = color.white)
+    table.cell(dash, 0, 1, "HTF bias (" + htfTimeframe + ")")
+    table.cell(dash, 1, 1, htfBias == 1 ? "Bullish ▲" : htfBias == -1 ? "Bearish ▼" : "Neutral", text_color = htfBias == 1 ? C_BULL : htfBias == -1 ? C_BEAR : color.gray)
+    table.cell(dash, 0, 2, "LTF bias")
+    table.cell(dash, 1, 2, ltfBias == "bullish" ? "Bullish ▲" : ltfBias == "bearish" ? "Bearish ▼" : "Neutral", text_color = ltfBias == "bullish" ? C_BULL : ltfBias == "bearish" ? C_BEAR : color.gray)
+    table.cell(dash, 0, 3, "Alignment")
+    table.cell(dash, 1, 3, aligned ? "Aligned ✔" : "Counter-trend ✖", text_color = aligned ? C_BULL : C_FVG_BEAR)
+    table.cell(dash, 0, 4, "Last event")
+    table.cell(dash, 1, 4, lastEvent)
+    table.cell(dash, 0, 5, "Fib OTE zone")
+    table.cell(dash, 1, 5, inZone ? "Price inside" : "Outside")
+    table.cell(dash, 0, 6, "Liquidity sweep")
+    table.cell(dash, 1, 6, bullSweepRecent ? "Bullish" : bearSweepRecent ? "Bearish" : "None")
